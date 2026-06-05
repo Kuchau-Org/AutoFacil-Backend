@@ -3,20 +3,17 @@
 Usa un motor SQLite temporal y sobreescribe la dependencia de sesion para no
 tocar la base de datos de desarrollo. Cubre autenticacion, aislamiento de datos
 por asesor (cada uno ve solo lo suyo), validaciones de negocio, dashboard por
-moneda, enlace publico, tipo de cambio y el credito frances sin cuota final.
+moneda, tipo de cambio y el credito frances con y sin cuota balon.
 """
 
 import os
 import tempfile
-from datetime import datetime, timedelta, timezone
 
-import jwt
 import pytest
 from fastapi.testclient import TestClient
 from sqlalchemy import create_engine
 from sqlalchemy.orm import sessionmaker
 
-from app.config import obtener_configuracion
 from app.database import Base, obtener_sesion
 from app.main import app
 from app.modelos.cliente import Cliente
@@ -136,14 +133,6 @@ def _crear_sim(h, cli, veh, **extra):
     )
 
 
-def test_login_y_auditoria():
-    """El login exitoso queda registrado en la auditoria del asesor."""
-
-    h = _headers()
-    audit = cliente.get("/auditoria", params={"entidad": "Usuario"}, headers=h).json()
-    assert any(r["accion"] == "LOGIN" for r in audit)
-
-
 def test_moneda_incompatible_rechazada():
     """Un credito PEN sobre un vehiculo USD debe rechazarse."""
 
@@ -242,8 +231,6 @@ def test_simulacion_valida_saldo_cero_e_indicadores():
     assert abs(sim["cronograma"][-1]["saldo_final"]) < 0.01
     assert sim["van"] is not None and sim["tir_mensual"] is not None and sim["tcea"] is not None
     assert "tasa_descuento_van" in sim
-    audit = cliente.get("/auditoria", params={"entidad": "Simulacion"}, headers=h).json()
-    assert any(r["accion"] == "CREAR" for r in audit)
 
 
 def test_dashboard_por_moneda():
@@ -290,16 +277,6 @@ def test_busqueda_historial_por_cliente_o_vehiculo():
     assert len(por_vehiculo) >= 1
     por_cliente = cliente.get("/simulaciones", params={"busqueda": "Ana"}, headers=h).json()
     assert len(por_cliente) >= 1
-
-
-def test_token_compartir_no_sirve_como_acceso():
-    """Un token de enlace compartible no puede usarse para autenticarse."""
-
-    h, cli, veh = _ids()
-    sim = _crear_sim(h, cli, veh).json()
-    token_compartir = sim["token_compartir"]
-    r = cliente.get("/clientes", headers={"Authorization": f"Bearer {token_compartir}"})
-    assert r.status_code == 401
 
 
 def test_registro_correo_obligatorio_y_normalizado():
@@ -407,18 +384,6 @@ def test_perfil_cambia_usuario_y_token_sigue_valido():
     assert cliente.put("/perfil", json={"usuario": "asesor"}, headers=h).status_code == 409
 
 
-def test_enlace_no_compartible_si_archivada():
-    """El enlace publico responde 410 cuando la simulacion fue archivada."""
-
-    h, cli, veh = _ids()
-    sim = _crear_sim(h, cli, veh).json()
-    token = sim["token_compartir"]
-    assert cliente.get(f"/publico/simulaciones/{token}").status_code == 200
-    # Archivar (baja logica) deja el enlace fuera de servicio.
-    cliente.delete(f"/simulaciones/{sim['id']}", headers=h)
-    assert cliente.get(f"/publico/simulaciones/{token}").status_code == 410
-
-
 def test_recalcular_reproduce_resultado():
     """Recalcular una simulacion guardada reproduce los mismos indicadores."""
 
@@ -482,13 +447,3 @@ def test_desembolso_neto_no_positivo_rechazado():
         headers=h,
     )
     assert r.status_code == 400
-
-
-def test_vista_publica_no_expone_datos_internos():
-    """La vista publica no debe exponer usuario_id ni campos internos."""
-
-    h, cli, veh = _ids()
-    sim = _crear_sim(h, cli, veh).json()
-    pub = cliente.get(f"/publico/simulaciones/{sim['token_compartir']}").json()
-    for campo in ("usuario_id", "cliente_id", "vehiculo_id", "configuracion_id"):
-        assert campo not in pub

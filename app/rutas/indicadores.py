@@ -64,7 +64,7 @@ def obtener_resumen(
         .scalar()
         or 0
     )
-    # Los agregados excluyen simulaciones anuladas o rechazadas.
+    # Los agregados excluyen las simulaciones archivadas (solo cuentan las vigentes).
     vigentes = (Simulacion.usuario_id == uid, Simulacion.estado.notin_(_ESTADOS_EXCLUIDOS))
     total_simulaciones = (
         sesion.query(func.count(Simulacion.id)).filter(*vigentes).scalar() or 0

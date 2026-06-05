@@ -14,7 +14,6 @@ from sqlalchemy.orm import Session
 from app.database import obtener_sesion
 from app.esquemas.cronograma import CronogramaFilaRespuesta
 from app.esquemas.simulacion import (
-    CambioEstadoRequest,
     ResultadoCalculo,
     SimulacionCalcularRequest,
     SimulacionDetalle,
@@ -28,7 +27,6 @@ from app.modelos.simulacion import Simulacion
 from app.modelos.usuario import Usuario
 from app.modelos.vehiculo import Vehiculo
 from app.seguridad.dependencias import obtener_usuario_actual
-from app.seguridad.jwt import crear_token_compartir
 from app.servicios.servicio_auditoria import registrar_auditoria
 from app.servicios.servicio_gestion_simulacion import (
     aplicar_resultado_a_modelo,
@@ -98,7 +96,6 @@ def _a_detalle(simulacion: Simulacion) -> SimulacionDetalle:
     base = SimulacionRespuesta.model_validate(simulacion).model_dump()
     return SimulacionDetalle(
         **base,
-        token_compartir=crear_token_compartir(simulacion.id),
         cliente_nombre=(
             f"{simulacion.cliente.nombres} {simulacion.cliente.apellidos}"
             if simulacion.cliente
@@ -311,25 +308,6 @@ def obtener_simulacion(
     return _a_detalle(_obtener_simulacion(sesion, simulacion_id, usuario_actual))
 
 
-@enrutador.get(
-    "/{simulacion_id}/cronograma",
-    response_model=list[CronogramaFilaRespuesta],
-    tags=["Cronograma de pagos"],
-    summary="Obtener el cronograma de pagos de una simulacion",
-)
-def obtener_cronograma(
-    simulacion_id: int,
-    sesion: Session = Depends(obtener_sesion),
-    usuario_actual: Usuario = Depends(obtener_usuario_actual),
-) -> list[CronogramaFilaRespuesta]:
-    """Devuelve unicamente el cronograma de pagos de una simulacion propia."""
-
-    simulacion = _obtener_simulacion(sesion, simulacion_id, usuario_actual)
-    return [
-        CronogramaFilaRespuesta.model_validate(fila) for fila in simulacion.cronograma
-    ]
-
-
 @enrutador.put(
     "/{simulacion_id}",
     response_model=SimulacionDetalle,
@@ -412,34 +390,6 @@ def recalcular_simulacion(
     simulacion.cronograma = construir_filas_cronograma(resultado)
     registrar_auditoria(
         sesion, usuario_actual.id, "Simulacion", "RECALCULAR", simulacion.id, simulacion.codigo
-    )
-    sesion.commit()
-    sesion.refresh(simulacion)
-    return _a_detalle(simulacion)
-
-
-@enrutador.post(
-    "/{simulacion_id}/estado",
-    response_model=SimulacionDetalle,
-    summary="Cambiar el estado de una simulacion",
-)
-def cambiar_estado_simulacion(
-    simulacion_id: int,
-    datos: CambioEstadoRequest,
-    sesion: Session = Depends(obtener_sesion),
-    usuario_actual: Usuario = Depends(obtener_usuario_actual),
-) -> SimulacionDetalle:
-    """Cambia el estado de una simulacion propia."""
-
-    simulacion = _obtener_simulacion(sesion, simulacion_id, usuario_actual)
-    simulacion.estado = datos.estado
-    registrar_auditoria(
-        sesion,
-        usuario_actual.id,
-        "Simulacion",
-        f"ESTADO_{datos.estado.value}",
-        simulacion.id,
-        simulacion.codigo,
     )
     sesion.commit()
     sesion.refresh(simulacion)

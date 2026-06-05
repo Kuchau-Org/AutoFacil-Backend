@@ -135,12 +135,6 @@ class SimulacionGuardarRequest(SimulacionCalcularRequest):
     actualizar_precio: bool = False
 
 
-class CambioEstadoRequest(BaseModel):
-    """Solicitud para cambiar el estado de una simulacion existente."""
-
-    estado: EstadoSimulacion
-
-
 class IndicadoresSimulacion(BaseModel):
     """Conjunto de indicadores financieros calculados para una simulacion."""
 
@@ -251,57 +245,6 @@ class SimulacionDetalle(SimulacionRespuesta):
     cliente_nombre: str | None = None
     vehiculo_descripcion: str | None = None
     usuario_nombre: str | None = None
-    token_compartir: str | None = None
-    cronograma: list[CronogramaFilaRespuesta] = []
-
-
-class SimulacionClienteVista(BaseModel):
-    """Vista de solo lectura, transparente y compartible (resumen del financiamiento).
-
-    Expone unicamente la informacion relevante del financiamiento y los
-    indicadores de transparencia, sin datos internos del sistema.
-    """
-
-    codigo: str
-    nombre: str | None = None
-    estado: EstadoSimulacion
-    moneda: Moneda
-    cliente_nombre: str | None = None
-    vehiculo_descripcion: str | None = None
-    fecha_inicio: date
-    precio_vehiculo: float
-    cuota_inicial: float
-    cuota_final: float
-    monto_financiado: float
-    plazo_meses: int
-    tea_equivalente: float
-    tem: float
-    cuota_mensual: float
-    cuota_total_promedio: float
-    tcea: float | None
-    # Tasa moratoria nominal anual no capitalizable e informativa (art. 25 SBS).
-    tasa_moratoria_anual: float
-    costo_total_credito: float
-    total_intereses: float
-    total_seguros: float
-    total_gastos_iniciales: float
-    total_cargos_desembolso: float
-    total_gps_mantenimiento: float
-    monto_total_pagado: float
-    # Desglose de cargos para la hoja resumen transparente.
-    seguro_desgravamen_anual: float
-    desgravamen_consentido: bool
-    seguro_vehicular_mensual: float
-    gps_instalacion: float
-    gps_mantenimiento_mensual: float
-    gps_reposicion: float
-    gastos_notariales: float
-    gastos_registrales: float
-    tasacion: float
-    # Datos de la poliza del seguro.
-    aseguradora: str | None = None
-    numero_poliza: str | None = None
-    coberturas: str | None = None
     cronograma: list[CronogramaFilaRespuesta] = []
 
 

@@ -62,10 +62,10 @@ pytest
 - El vehiculo no maneja estado comercial: solo `activo` (baja logica). Se puede
   editar y recalcular propuestas historicas aunque el vehiculo se haya dado de
   baja; se conserva el precio original salvo que se pida actualizarlo.
-- Token JWT con `tipo="acceso"`; el enlace publico usa `tipo="compartir"` y solo
-  muestra propuestas calculadas (las archivadas devuelven 410).
-- VAN y TCEA segun transparencia SBS (del deudor). La hoja resumen del cliente
-  detalla los cargos, la tasa moratoria (nominal anual no capitalizable) y los
+- Autenticacion con token JWT (`tipo="acceso"`); todos los endpoints salvo
+  registro y login requieren la cabecera `Authorization: Bearer <token>`.
+- VAN y TCEA segun transparencia SBS (del deudor). El detalle de la simulacion
+  incluye los cargos, la tasa moratoria (nominal anual no capitalizable) y los
   datos de la poliza (art. 25 del Reglamento de Transparencia).
 - Migracion ligera para SQLite: al iniciar se agregan columnas faltantes y se
   normalizan estados antiguos (`app/migraciones.py`), sin perder datos previos.

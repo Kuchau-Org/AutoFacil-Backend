@@ -39,9 +39,6 @@ class Configuracion(BaseSettings):
     algoritmo_jwt: str = "HS256"
     minutos_expiracion_token: int = 60 * 8
 
-    # Dias de validez del enlace publico compartible con el cliente.
-    dias_expiracion_token_compartir: int = 30
-
     # Origenes permitidos para CORS durante el desarrollo local.
     origenes_cors: list[str] = [
         "http://localhost:5173",

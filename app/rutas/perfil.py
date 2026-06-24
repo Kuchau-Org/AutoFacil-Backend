@@ -8,7 +8,6 @@ from app.esquemas.usuario import PerfilActualizar, UsuarioRespuesta
 from app.modelos.usuario import Usuario
 from app.seguridad.dependencias import obtener_usuario_actual
 from app.seguridad.hash import hashear_password, verificar_password
-from app.servicios.servicio_auditoria import registrar_auditoria
 from app.utilidades.respuestas import error_conflicto, error_validacion
 
 enrutador = APIRouter(prefix="/perfil", tags=["Perfil"])
@@ -27,10 +26,7 @@ def actualizar_perfil(
     sesion: Session = Depends(obtener_sesion),
     usuario_actual: Usuario = Depends(obtener_usuario_actual),
 ) -> Usuario:
-    """Actualiza el nombre, apellido, correo o contrasena del usuario actual.
-
-    Para cambiar la contrasena se debe enviar la contrasena actual correcta.
-    """
+    """Actualiza nombre, apellido, correo o contrasena (requiere la contrasena actual)."""
 
     if datos.correo and datos.correo != usuario_actual.correo:
         existe = (
@@ -64,15 +60,6 @@ def actualizar_perfil(
             raise error_validacion("La contrasena actual es incorrecta.")
         usuario_actual.password_hash = hashear_password(datos.password_nueva)
 
-    # Auditoria sin datos sensibles: nunca se registra la contrasena.
-    registrar_auditoria(
-        sesion,
-        usuario_actual.id,
-        "Usuario",
-        "ACTUALIZAR_PERFIL",
-        usuario_actual.id,
-        "Actualizacion de perfil",
-    )
     sesion.commit()
     sesion.refresh(usuario_actual)
     return usuario_actual

@@ -115,10 +115,8 @@ def _veh_pen(veh):
 def _solicitud_base(cliente_id, vehiculo_id, moneda="PEN", **extra):
     base = {
         "cliente_id": cliente_id, "vehiculo_id": vehiculo_id, "moneda": moneda,
-        "tipo_tasa": "EFECTIVA", "valor_tasa": 0.15, "plazo_meses": 36,
-        "porcentaje_cuota_inicial": 0.2, "tipo_gracia": "NINGUNA", "meses_gracia": 0,
-        "seguro_desgravamen_anual": 0, "seguro_vehicular_mensual": 0,
-        "gps_instalacion": 0, "cok_anual": 0.10,
+        "plan": "PLAN_36", "tipo_tasa": "EFECTIVA", "valor_tasa": 0.15,
+        "porcentaje_cuota_inicial": 0.2, "cok_anual": 0.10,
     }
     base.update(extra)
     return base
@@ -193,32 +191,35 @@ def test_cualquier_vehiculo_activo_se_puede_simular():
         assert r.status_code == 200, r.text
 
 
-def test_credito_con_y_sin_cuota_balon_termina_en_cero():
-    """Producto Compra Inteligente: con o sin cuota balon el saldo cierra en cero."""
+def test_planes_difieren_la_cuota_final_y_cierran_en_cero():
+    """Producto Compra Inteligente: ambos planes difieren el cuoton al periodo N+1."""
 
     h, cli, veh = _ids()
     activo = next(c for c in cli if c["activo"])
     veh_pen = _veh_pen(veh)["id"]
 
-    sin_balon = cliente.post(
+    plan36 = cliente.post(
         "/simulaciones/calcular",
-        json=_solicitud_base(activo["id"], veh_pen, plazo_meses=24, porcentaje_cuota_final=0),
+        json=_solicitud_base(activo["id"], veh_pen, plan="PLAN_36"),
         headers=h,
     ).json()
-    assert sin_balon["cuota_final"] == 0
-    assert abs(sin_balon["cronograma"][-1]["saldo_final"]) < 0.01
+    plan24 = cliente.post(
+        "/simulaciones/calcular",
+        json=_solicitud_base(activo["id"], veh_pen, plan="PLAN_24"),
+        headers=h,
+    ).json()
 
-    con_balon = cliente.post(
-        "/simulaciones/calcular",
-        json=_solicitud_base(activo["id"], veh_pen, plazo_meses=24, porcentaje_cuota_final=0.40),
-        headers=h,
-    ).json()
-    # La cuota balon difiere parte del capital al final y reduce la cuota mensual.
-    assert con_balon["cuota_final"] > 0
-    assert con_balon["cronograma"][-1]["tipo_periodo"] == "CUOTA_FINAL"
-    assert con_balon["cronograma"][-1]["cuota_final_extraordinaria"] > 0
-    assert abs(con_balon["cronograma"][-1]["saldo_final"]) < 0.01
-    assert con_balon["cuota_mensual"] < sin_balon["cuota_mensual"]
+    # El cuoton es 40% (Plan 36) y 50% (Plan 24) del precio.
+    assert plan36["porcentaje_cuota_final"] == 0.40
+    assert plan24["porcentaje_cuota_final"] == 0.50
+    # El cronograma tiene N+1 filas y el cuoton se paga en la ultima.
+    assert len(plan36["cronograma"]) == 37 and len(plan24["cronograma"]) == 25
+    for res in (plan36, plan24):
+        ultima = res["cronograma"][-1]
+        assert ultima["tipo_periodo"] == "CUOTA_FINAL"
+        assert ultima["amortizacion_cuoton"] > 0
+        assert abs(ultima["saldo_final_cuoton"]) < 0.01
+        assert abs(ultima["saldo_final"]) < 0.01
 
 
 def test_simulacion_valida_saldo_cero_e_indicadores():
@@ -228,20 +229,9 @@ def test_simulacion_valida_saldo_cero_e_indicadores():
     r = _crear_sim(h, cli, veh)
     assert r.status_code == 201
     sim = r.json()
-    assert abs(sim["cronograma"][-1]["saldo_final"]) < 0.01
+    assert abs(sim["cronograma"][-1]["saldo_final_cuoton"]) < 0.01
     assert sim["van"] is not None and sim["tir_mensual"] is not None and sim["tcea"] is not None
-    assert "tasa_descuento_van" in sim
-
-
-def test_dashboard_por_moneda():
-    """El dashboard agrupa los montos financiados por moneda sin mezclarlos."""
-
-    h = _headers()
-    rs = cliente.get("/indicadores/resumen", headers=h).json()
-    assert "montos_por_moneda" in rs
-    assert "total_configuraciones" not in rs
-    for fila in rs["montos_por_moneda"]:
-        assert fila["moneda"] in ("PEN", "USD")
+    assert "saldo_financiado" in sim
 
 
 def test_aislamiento_por_asesor():
@@ -391,7 +381,7 @@ def test_recalcular_reproduce_resultado():
     sim = _crear_sim(h, cli, veh).json()
     re = cliente.post(f"/simulaciones/{sim['id']}/recalcular", headers=h).json()
     assert abs(re["cuota_mensual"] - sim["cuota_mensual"]) < 0.01
-    assert abs(re["monto_financiado"] - sim["monto_financiado"]) < 0.01
+    assert abs(re["monto_prestamo"] - sim["monto_prestamo"]) < 0.01
     if sim["tcea"] is not None and re["tcea"] is not None:
         assert abs(re["tcea"] - sim["tcea"]) < 1e-6
 
@@ -406,11 +396,11 @@ def test_editar_simulacion_archivada_no_cambia_estado():
     activo = next(c for c in cli if c["activo"])
     editada = cliente.put(
         f"/simulaciones/{sim['id']}",
-        json={**_solicitud_base(activo["id"], _veh_pen(veh)["id"], plazo_meses=24), "estado": "CALCULADA"},
+        json={**_solicitud_base(activo["id"], _veh_pen(veh)["id"], plan="PLAN_24"), "estado": "CALCULADA"},
         headers=h,
     ).json()
     assert editada["estado"] == "ARCHIVADA"
-    assert editada["plazo_meses"] == 24
+    assert editada["numero_cuotas"] == 24
 
 
 def test_editar_cambiando_moneda_convierte_precio_conservado():
@@ -433,17 +423,16 @@ def test_editar_cambiando_moneda_convierte_precio_conservado():
     assert abs(editada["precio_vehiculo"] - precio_pen / 4.0) < 0.01
 
 
-def test_desembolso_neto_no_positivo_rechazado():
-    """No se puede simular si los cargos dejan el desembolso neto <= 0."""
+def test_cuota_final_mayor_que_saldo_rechazada():
+    """Si la cuota inicial es tan alta que el cuoton supera al prestamo, se rechaza."""
 
     h, cli, veh = _ids()
     activo = next(c for c in cli if c["activo"])
-    # Cuota inicial 99% deja un monto financiado positivo, pero un GPS mayor que
-    # ese resto deja el desembolso neto negativo: debe rechazarse.
+    # Cuota inicial 99%: el prestamo queda en 1% del precio, menor que el cuoton
+    # (40% del precio en Plan 36): no queda saldo para las cuotas mensuales.
     r = cliente.post(
         "/simulaciones/calcular",
-        json=_solicitud_base(activo["id"], _veh_pen(veh)["id"],
-                             porcentaje_cuota_inicial=0.99, gps_instalacion=2000),
+        json=_solicitud_base(activo["id"], _veh_pen(veh)["id"], porcentaje_cuota_inicial=0.99),
         headers=h,
     )
     assert r.status_code == 400

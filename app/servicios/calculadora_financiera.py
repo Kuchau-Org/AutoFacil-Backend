@@ -1,26 +1,11 @@
-"""Nucleo de calculo financiero: metodo frances vencido ordinario con cuota balon.
-
-Genera el cronograma de pagos del credito vehicular (producto Compra Inteligente).
-Todo el calculo se realiza con `Decimal` de alta precision; no se redondea ningun
-valor intermedio. El redondeo se aplica unicamente en la capa de presentacion.
-
-Reglas implementadas:
-* Cuotas ordinarias vencidas, una cada periodo comercial de 30 dias.
-* La cuota ordinaria del tramo regular es constante y se calcula descontando el
-  valor futuro del vehiculo (cuota balon), de modo que el saldo al final del
-  plazo sea exactamente ese valor balon.
-* La cuota balon se paga junto con la ultima cuota ordinaria y amortiza el saldo
-  remanente, llevando el saldo a cero.
-* Cada cuota se descompone en interes, amortizacion, seguros (desgravamen y
-  vehicular) y el mantenimiento mensual del GPS.
-"""
+"""Calculo del cronograma de pagos (metodo frances con cuoton diferido al periodo N+1)."""
 
 from dataclasses import dataclass, field
 from datetime import date
 from decimal import Decimal
 
-from app.modelos.enumeraciones import TipoGracia, TipoPeriodo
-from app.utilidades.decimales import CERO, MESES_ANIO, UNO, a_decimal, potencia
+from app.modelos.enumeraciones import TipoPeriodo
+from app.utilidades.decimales import CERO, UNO, a_decimal, potencia
 from app.utilidades.fechas import avanzar_periodos_comerciales
 
 
@@ -28,35 +13,49 @@ from app.utilidades.fechas import avanzar_periodos_comerciales
 class ParametrosCronograma:
     """Parametros de entrada para construir un cronograma de pagos."""
 
-    monto_financiado: Decimal
-    tem: Decimal
-    plazo_meses: int
-    tipo_gracia: TipoGracia
-    meses_gracia: int
-    seguro_desgravamen_anual: Decimal
-    seguro_vehicular_mensual: Decimal
-    gps_mantenimiento_mensual: Decimal
-    cuota_final: Decimal
+    monto_prestamo: Decimal           # Prestamo = PV - CI + costos financiados
+    cuota_final: Decimal              # CF (cuoton) = pCF * PV
+    tem: Decimal                      # tasa efectiva mensual
+    numero_cuotas: int                # N (cuotas regulares); el cuoton cae en N+1
+    meses_gracia_total: int           # periodos de gracia total al inicio
+    meses_gracia_parcial: int         # periodos de gracia parcial a continuacion
+    seguro_desgravamen_mensual: Decimal  # pSegDes (decimal mensual)
+    seguro_riesgo_periodico: Decimal     # SegRiePer (monto por periodo)
+    gps_periodico: Decimal               # GPSPer (monto por periodo)
+    portes_periodico: Decimal            # PortesPer (monto por periodo)
+    gastos_adm_periodico: Decimal        # GasAdmPer (monto por periodo)
     fecha_inicio: date
 
 
 @dataclass
 class FilaCronograma:
-    """Detalle calculado de un periodo del cronograma (valores sin redondear)."""
+    """Detalle calculado de un periodo del cronograma (valores sin redondear).
+
+    Los importes se expresan como magnitudes positivas; `flujo` es el egreso del
+    deudor de ese periodo (negativo).
+    """
 
     numero_periodo: int
     fecha_pago: date
     tipo_periodo: TipoPeriodo
+    # Tramo del cuoton (cuota final diferida).
+    saldo_inicial_cuoton: Decimal
+    interes_cuoton: Decimal
+    amortizacion_cuoton: Decimal
+    desgravamen_cuoton: Decimal
+    saldo_final_cuoton: Decimal
+    # Tramo de la cuota regular.
     saldo_inicial: Decimal
     interes: Decimal
+    cuota: Decimal
     amortizacion: Decimal
     seguro_desgravamen: Decimal
-    seguro_vehicular: Decimal
-    gps_mantenimiento: Decimal
-    cuota_ordinaria: Decimal
-    cuota_final_extraordinaria: Decimal
-    cuota_total: Decimal
+    seguro_riesgo: Decimal
+    gps: Decimal
+    portes: Decimal
+    gastos_adm: Decimal
     saldo_final: Decimal
+    flujo: Decimal
 
 
 @dataclass
@@ -64,186 +63,170 @@ class ResultadoCronograma:
     """Cronograma generado junto con los totales acumulados sin redondear."""
 
     filas: list[FilaCronograma] = field(default_factory=list)
-    cuota_ordinaria: Decimal = CERO
-    cuota_final: Decimal = CERO
-    cuota_total_promedio: Decimal = CERO
+    saldo_financiado: Decimal = CERO   # Saldo = Prestamo - VP(cuoton)
+    vp_cuoton: Decimal = CERO          # SICF[1] = CF / (1 + TEM + pSegDes)^(N+1)
+    cuota_ordinaria: Decimal = CERO    # cuota regular en estado estable (sin gracia)
     total_intereses: Decimal = CERO
     total_amortizado: Decimal = CERO
-    total_seguros: Decimal = CERO
-    total_gps_mantenimiento: Decimal = CERO
-    monto_total_pagado: Decimal = CERO
+    total_seguro_desgravamen: Decimal = CERO
+    total_seguro_riesgo: Decimal = CERO
+    total_gps: Decimal = CERO
+    total_portes: Decimal = CERO
+    total_gastos_adm: Decimal = CERO
+    monto_total_pagado: Decimal = CERO   # suma de los egresos del deudor (sin el periodo 0)
 
 
 def calcular_cuota_francesa(
-    saldo_base: Decimal,
-    tasa_periodica: Decimal,
-    numero_periodos: int,
-    valor_futuro: Decimal = CERO,
+    saldo_base: Decimal, tasa_periodica: Decimal, numero_periodos: int
 ) -> Decimal:
-    """Calcula la cuota ordinaria constante del metodo frances con cuota balon.
-
-        cuota = (saldo_base - VF * (1 + i)^(-n)) * i / (1 - (1 + i)^(-n))
-
-    donde VF es el valor futuro (cuota balon) que quedara como saldo al final.
-    Con VF = 0 se obtiene la cuota frances clasica. Si la tasa periodica es cero,
-    la cuota amortiza linealmente el saldo neto del valor balon.
-    """
+    """Cuota francesa constante que amortiza el saldo a cero en n periodos."""
 
     saldo_base = a_decimal(saldo_base)
     tasa_periodica = a_decimal(tasa_periodica)
-    valor_futuro = a_decimal(valor_futuro)
     n = numero_periodos
-
     if n <= 0:
         raise ValueError("El numero de periodos ordinarios debe ser mayor que cero.")
-
     if tasa_periodica == CERO:
-        return (saldo_base - valor_futuro) / Decimal(n)
-
-    factor = potencia(UNO + tasa_periodica, Decimal(-n))
-    numerador = (saldo_base - valor_futuro * factor) * tasa_periodica
-    denominador = UNO - factor
-    return numerador / denominador
+        return saldo_base / Decimal(n)
+    factor = potencia(UNO + tasa_periodica, Decimal(n))
+    return saldo_base * tasa_periodica * factor / (factor - UNO)
 
 
 def generar_cronograma(parametros: ParametrosCronograma) -> ResultadoCronograma:
-    """Construye el cronograma completo de pagos con gracia y cuota balon.
+    """Construye el cronograma completo (N+1 periodos) del metodo Compra Inteligente."""
 
-    Aplica primero los periodos de gracia (total o parcial) y luego calcula la
-    cuota ordinaria sobre el saldo resultante, descontando el valor balon, de
-    modo que el saldo termine en cero tras pagar la cuota balon en el ultimo
-    periodo.
-    """
-
-    monto_financiado = a_decimal(parametros.monto_financiado)
-    tem = a_decimal(parametros.tem)
-    desgravamen_mensual = a_decimal(parametros.seguro_desgravamen_anual) / MESES_ANIO
-    seguro_vehicular = a_decimal(parametros.seguro_vehicular_mensual)
-    gps_mantenimiento = a_decimal(parametros.gps_mantenimiento_mensual)
+    prestamo = a_decimal(parametros.monto_prestamo)
     cuota_final = a_decimal(parametros.cuota_final)
+    tem = a_decimal(parametros.tem)
+    desgravamen = a_decimal(parametros.seguro_desgravamen_mensual)
+    seguro_riesgo = a_decimal(parametros.seguro_riesgo_periodico)
+    gps = a_decimal(parametros.gps_periodico)
+    portes = a_decimal(parametros.portes_periodico)
+    gastos_adm = a_decimal(parametros.gastos_adm_periodico)
 
-    plazo = parametros.plazo_meses
-    meses_gracia = parametros.meses_gracia if parametros.tipo_gracia != TipoGracia.NINGUNA else 0
-    periodos_normales = plazo - meses_gracia
+    n = parametros.numero_cuotas
+    meses_total = parametros.meses_gracia_total
+    meses_parcial = parametros.meses_gracia_parcial
 
-    if periodos_normales <= 0:
+    if n <= 0:
+        raise ValueError("El numero de cuotas debe ser mayor que cero.")
+    if meses_total + meses_parcial >= n:
+        raise ValueError("Los meses de gracia deben ser menores que el numero de cuotas.")
+
+    # Tasa de descuento del cuoton y de la cuota regular: TEM mas el desgravamen.
+    tasa_con_desgravamen = tem + desgravamen
+
+    # Valor presente del cuoton (se descuenta N+1 periodos) y saldo regular.
+    vp_cuoton = cuota_final / potencia(UNO + tasa_con_desgravamen, Decimal(n + 1))
+    saldo_financiado = prestamo - vp_cuoton
+    if saldo_financiado <= CERO:
         raise ValueError(
-            "El plazo debe ser mayor que la cantidad de meses de gracia."
+            "La cuota final es demasiado alta: no queda saldo para las cuotas mensuales."
         )
 
-    resultado = ResultadoCronograma(cuota_final=cuota_final)
-    saldo = monto_financiado
+    resultado = ResultadoCronograma(
+        saldo_financiado=saldo_financiado, vp_cuoton=vp_cuoton
+    )
 
-    # Tramo de gracia: capitaliza intereses (total) o cobra solo intereses (parcial).
-    for indice in range(1, meses_gracia + 1):
-        fecha = avanzar_periodos_comerciales(parametros.fecha_inicio, indice)
-        interes = saldo * tem
-        desgravamen = saldo * desgravamen_mensual
+    saldo = saldo_financiado          # SI del tramo regular
+    saldo_cuoton = vp_cuoton          # SICF del tramo del cuoton
 
-        if parametros.tipo_gracia == TipoGracia.TOTAL:
-            cuota_ordinaria = CERO
-            saldo_final = saldo + interes
-            tipo_periodo = TipoPeriodo.GRACIA_TOTAL
-        else:  # Gracia parcial: se pagan los intereses, no se amortiza capital.
-            cuota_ordinaria = interes
-            saldo_final = saldo
-            tipo_periodo = TipoPeriodo.GRACIA_PARCIAL
+    for nc in range(1, n + 2):        # periodos 1..N+1
+        fecha = avanzar_periodos_comerciales(parametros.fecha_inicio, nc)
 
-        cuota_total = cuota_ordinaria + desgravamen + seguro_vehicular + gps_mantenimiento
-
-        resultado.filas.append(
-            FilaCronograma(
-                numero_periodo=indice,
-                fecha_pago=fecha,
-                tipo_periodo=tipo_periodo,
-                saldo_inicial=saldo,
-                interes=interes,
-                amortizacion=CERO,
-                seguro_desgravamen=desgravamen,
-                seguro_vehicular=seguro_vehicular,
-                gps_mantenimiento=gps_mantenimiento,
-                cuota_ordinaria=cuota_ordinaria,
-                cuota_final_extraordinaria=CERO,
-                cuota_total=cuota_total,
-                saldo_final=saldo_final,
-            )
-        )
-
-        resultado.total_intereses += interes
-        resultado.total_seguros += desgravamen + seguro_vehicular
-        resultado.total_gps_mantenimiento += gps_mantenimiento
-        resultado.monto_total_pagado += cuota_total
-        saldo = saldo_final
-
-    if cuota_final >= saldo:
-        raise ValueError(
-            "La cuota balon debe ser menor que el saldo a financiar."
-        )
-
-    # Cuota ordinaria del tramo regular, descontando el valor balon.
-    cuota_ordinaria = calcular_cuota_francesa(saldo, tem, periodos_normales, cuota_final)
-    resultado.cuota_ordinaria = cuota_ordinaria
-
-    suma_cuota_total_ordinaria = CERO
-
-    for indice in range(1, periodos_normales + 1):
-        numero_periodo = meses_gracia + indice
-        fecha = avanzar_periodos_comerciales(parametros.fecha_inicio, numero_periodo)
-        interes = saldo * tem
-        desgravamen = saldo * desgravamen_mensual
-        es_ultimo = indice == periodos_normales
-
-        if es_ultimo:
-            # En la ultima cuota se amortiza todo el saldo: la parte regular de la
-            # cuota mas la cuota balon. Esto fuerza el saldo final a cero exacto.
-            amortizacion_regular = cuota_ordinaria - interes
-            balon = saldo - amortizacion_regular
-            amortizacion = saldo
-            cuota_final_extra = balon
-            saldo_final = CERO
-            tipo_periodo = TipoPeriodo.CUOTA_FINAL if cuota_final > CERO else TipoPeriodo.CUOTA_ORDINARIA
+        # --- Tramo del cuoton ---
+        interes_cuoton = saldo_cuoton * tem
+        desgravamen_cuoton = saldo_cuoton * desgravamen
+        if nc == n + 1:
+            # Ultimo periodo: se cancela el cuoton completo (= cuota final).
+            amortizacion_cuoton = saldo_cuoton + interes_cuoton + desgravamen_cuoton
+            saldo_final_cuoton = CERO
         else:
-            amortizacion = cuota_ordinaria - interes
-            cuota_final_extra = CERO
-            saldo_final = saldo - amortizacion
-            tipo_periodo = TipoPeriodo.CUOTA_ORDINARIA
+            amortizacion_cuoton = CERO
+            saldo_final_cuoton = saldo_cuoton + interes_cuoton + desgravamen_cuoton
 
-        cuota_total = (
-            cuota_ordinaria
-            + cuota_final_extra
-            + desgravamen
-            + seguro_vehicular
-            + gps_mantenimiento
-        )
+        # --- Tramo de la cuota regular ---
+        if nc > n:
+            # Periodo N+1: solo se paga el cuoton (no hay cuota regular).
+            saldo_inicial = CERO
+            interes = cuota = amortizacion = seguro_desgravamen = CERO
+            saldo_final = CERO
+            tipo_periodo = TipoPeriodo.CUOTA_FINAL
+        else:
+            saldo_inicial = saldo
+            interes = saldo * tem
+            seguro_desgravamen = saldo * desgravamen
+            if nc <= meses_total:
+                # Gracia total: no se paga; el interes se capitaliza al saldo.
+                cuota = amortizacion = CERO
+                saldo_final = saldo + interes
+                tipo_periodo = TipoPeriodo.GRACIA_TOTAL
+            elif nc <= meses_total + meses_parcial:
+                # Gracia parcial: se paga solo el interes; el saldo no varia.
+                cuota = interes
+                amortizacion = CERO
+                saldo_final = saldo
+                tipo_periodo = TipoPeriodo.GRACIA_PARCIAL
+            else:
+                # Cuota ordinaria francesa (recalculada cada periodo: autoajustable).
+                periodos_restantes = n - nc + 1
+                cuota = calcular_cuota_francesa(
+                    saldo, tasa_con_desgravamen, periodos_restantes
+                )
+                amortizacion = cuota - interes - seguro_desgravamen
+                saldo_final = saldo - amortizacion
+                tipo_periodo = TipoPeriodo.CUOTA_ORDINARIA
+                if resultado.cuota_ordinaria == CERO:
+                    resultado.cuota_ordinaria = cuota
+
+        # --- Costos periodicos (todos los periodos, incluido el N+1) ---
+        # --- Flujo (egreso del deudor del periodo) ---
+        egreso = cuota + seguro_riesgo + gps + portes + gastos_adm
+        if tipo_periodo in (TipoPeriodo.GRACIA_TOTAL, TipoPeriodo.GRACIA_PARCIAL):
+            # En gracia el desgravamen no va dentro de la cuota: se suma aparte.
+            egreso += seguro_desgravamen
+        if nc == n + 1:
+            egreso += amortizacion_cuoton
+        flujo = -egreso
 
         resultado.filas.append(
             FilaCronograma(
-                numero_periodo=numero_periodo,
+                numero_periodo=nc,
                 fecha_pago=fecha,
                 tipo_periodo=tipo_periodo,
-                saldo_inicial=saldo,
+                saldo_inicial_cuoton=saldo_cuoton,
+                interes_cuoton=interes_cuoton,
+                amortizacion_cuoton=amortizacion_cuoton,
+                desgravamen_cuoton=desgravamen_cuoton,
+                saldo_final_cuoton=saldo_final_cuoton,
+                saldo_inicial=saldo_inicial,
                 interes=interes,
+                cuota=cuota,
                 amortizacion=amortizacion,
-                seguro_desgravamen=desgravamen,
-                seguro_vehicular=seguro_vehicular,
-                gps_mantenimiento=gps_mantenimiento,
-                cuota_ordinaria=cuota_ordinaria,
-                cuota_final_extraordinaria=cuota_final_extra,
-                cuota_total=cuota_total,
+                seguro_desgravamen=seguro_desgravamen,
+                seguro_riesgo=seguro_riesgo,
+                gps=gps,
+                portes=portes,
+                gastos_adm=gastos_adm,
                 saldo_final=saldo_final,
+                flujo=flujo,
             )
         )
 
-        resultado.total_intereses += interes
-        resultado.total_amortizado += amortizacion
-        resultado.total_seguros += desgravamen + seguro_vehicular
-        resultado.total_gps_mantenimiento += gps_mantenimiento
-        resultado.monto_total_pagado += cuota_total
-        # El promedio mensual representa la cuota regular (con seguros y cargos),
-        # SIN la cuota balon: esta se paga aparte al final y se informa por separado.
-        suma_cuota_total_ordinaria += cuota_total - cuota_final_extra
-        saldo = saldo_final
+        # --- Totales (replican las sumas del Excel) ---
+        if nc <= n:
+            # Interes del tramo regular = SUM(Cuota) - SUM(A) - SUM(SegDes).
+            resultado.total_intereses += cuota - amortizacion - seguro_desgravamen
+            resultado.total_amortizado += amortizacion
+            resultado.total_seguro_desgravamen += seguro_desgravamen
+        resultado.total_amortizado += amortizacion_cuoton
+        resultado.total_seguro_riesgo += seguro_riesgo
+        resultado.total_gps += gps
+        resultado.total_portes += portes
+        resultado.total_gastos_adm += gastos_adm
+        resultado.monto_total_pagado += egreso
 
-    resultado.cuota_total_promedio = suma_cuota_total_ordinaria / Decimal(periodos_normales)
+        saldo = saldo_final
+        saldo_cuoton = saldo_final_cuoton
 
     return resultado

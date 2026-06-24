@@ -20,9 +20,9 @@ def _solicitud() -> SimulacionCalcularRequest:
         cliente_id=1,
         vehiculo_id=1,
         moneda="PEN",
+        plan="PLAN_36",
         tipo_tasa="EFECTIVA",
         valor_tasa=Decimal("0.15"),
-        plazo_meses=36,
         porcentaje_cuota_inicial=Decimal("0.20"),
     )
 
@@ -75,9 +75,9 @@ def test_simular_mismo_vehiculo_en_otra_moneda():
         vehiculo_id=1,
         moneda="USD",
         tipo_cambio_referencial=Decimal("3.75"),
+        plan="PLAN_36",
         tipo_tasa="EFECTIVA",
         valor_tasa=Decimal("0.12"),
-        plazo_meses=36,
         porcentaje_cuota_inicial=Decimal("0.20"),
     )
     entrada = construir_entrada(solicitud, vehiculo)

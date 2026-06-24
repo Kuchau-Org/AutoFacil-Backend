@@ -1,9 +1,4 @@
-"""Ruta de consulta del tipo de cambio en tiempo real.
-
-Expone el valor actual de las monedas obtenido de una API publica para apoyar
-los reportes informativos cuando el credito se pacta en Dolares. El calculo de
-la simulacion no aplica esta conversion: siempre opera en la moneda del credito.
-"""
+"""Ruta de consulta del tipo de cambio en tiempo real (USD/PEN)."""
 
 from fastapi import APIRouter, Depends, Query
 

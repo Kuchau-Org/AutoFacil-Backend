@@ -11,7 +11,7 @@ from app.modelos.enumeraciones import TipoPeriodo
 
 
 class CronogramaPago(Base):
-    """Detalle de un periodo del cronograma: saldo, interes, amortizacion y cargos."""
+    """Detalle de un periodo: tramo del cuoton, tramo regular y flujo del deudor."""
 
     __tablename__ = "cronogramas_pago"
 
@@ -23,17 +23,24 @@ class CronogramaPago(Base):
     fecha_pago: Mapped[date] = mapped_column(Date, nullable=False)
     tipo_periodo: Mapped[TipoPeriodo] = mapped_column(SqlEnum(TipoPeriodo), nullable=False)
 
-    saldo_inicial: Mapped[float] = mapped_column(TipoMonto, nullable=False)
+    # Tramo del cuoton (cuota final diferida).
+    saldo_inicial_cuoton: Mapped[float] = mapped_column(TipoMonto, nullable=False, default=0)
+    interes_cuoton: Mapped[float] = mapped_column(TipoMonto, nullable=False, default=0)
+    amortizacion_cuoton: Mapped[float] = mapped_column(TipoMonto, nullable=False, default=0)
+    desgravamen_cuoton: Mapped[float] = mapped_column(TipoMonto, nullable=False, default=0)
+    saldo_final_cuoton: Mapped[float] = mapped_column(TipoMonto, nullable=False, default=0)
+
+    # Tramo de la cuota regular.
+    saldo_inicial: Mapped[float] = mapped_column(TipoMonto, nullable=False, default=0)
     interes: Mapped[float] = mapped_column(TipoMonto, nullable=False, default=0)
+    cuota: Mapped[float] = mapped_column(TipoMonto, nullable=False, default=0)
     amortizacion: Mapped[float] = mapped_column(TipoMonto, nullable=False, default=0)
     seguro_desgravamen: Mapped[float] = mapped_column(TipoMonto, nullable=False, default=0)
-    seguro_vehicular: Mapped[float] = mapped_column(TipoMonto, nullable=False, default=0)
-    gps_mantenimiento: Mapped[float] = mapped_column(TipoMonto, nullable=False, default=0)
-    cuota_ordinaria: Mapped[float] = mapped_column(TipoMonto, nullable=False, default=0)
-    cuota_final_extraordinaria: Mapped[float] = mapped_column(
-        TipoMonto, nullable=False, default=0
-    )
-    cuota_total: Mapped[float] = mapped_column(TipoMonto, nullable=False, default=0)
+    seguro_riesgo: Mapped[float] = mapped_column(TipoMonto, nullable=False, default=0)
+    gps: Mapped[float] = mapped_column(TipoMonto, nullable=False, default=0)
+    portes: Mapped[float] = mapped_column(TipoMonto, nullable=False, default=0)
+    gastos_adm: Mapped[float] = mapped_column(TipoMonto, nullable=False, default=0)
     saldo_final: Mapped[float] = mapped_column(TipoMonto, nullable=False, default=0)
+    flujo: Mapped[float] = mapped_column(TipoMonto, nullable=False, default=0)
 
     simulacion = relationship("Simulacion", back_populates="cronograma")

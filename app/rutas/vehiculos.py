@@ -1,8 +1,4 @@
-"""Rutas de gestion del catalogo de vehiculos.
-
-Cada asesor gestiona su propio catalogo: los vehiculos se filtran por
-`usuario_id` y solo son accesibles por el asesor que los registro.
-"""
+"""Rutas del catalogo de vehiculos (cada asesor ve solo el suyo)."""
 
 from fastapi import APIRouter, Depends, Query, status
 from sqlalchemy import or_
@@ -13,7 +9,6 @@ from app.esquemas.vehiculo import VehiculoActualizar, VehiculoCrear, VehiculoRes
 from app.modelos.usuario import Usuario
 from app.modelos.vehiculo import Vehiculo
 from app.seguridad.dependencias import obtener_usuario_actual
-from app.servicios.servicio_auditoria import registrar_auditoria
 from app.utilidades.respuestas import error_no_encontrado
 
 enrutador = APIRouter(prefix="/vehiculos", tags=["Vehiculos"])
@@ -78,15 +73,6 @@ def crear_vehiculo(
 
     vehiculo = Vehiculo(**datos.model_dump(), usuario_id=usuario_actual.id)
     sesion.add(vehiculo)
-    sesion.flush()
-    registrar_auditoria(
-        sesion,
-        usuario_actual.id,
-        "Vehiculo",
-        "CREAR",
-        vehiculo.id,
-        f"{vehiculo.marca} {vehiculo.modelo}",
-    )
     sesion.commit()
     sesion.refresh(vehiculo)
     return vehiculo
@@ -104,14 +90,6 @@ def actualizar_vehiculo(
     vehiculo = _obtener_propio(sesion, vehiculo_id, usuario_actual)
     for campo, valor in datos.model_dump(exclude_unset=True).items():
         setattr(vehiculo, campo, valor)
-    registrar_auditoria(
-        sesion,
-        usuario_actual.id,
-        "Vehiculo",
-        "ACTUALIZAR",
-        vehiculo.id,
-        f"{vehiculo.marca} {vehiculo.modelo}",
-    )
     sesion.commit()
     sesion.refresh(vehiculo)
     return vehiculo
@@ -131,14 +109,6 @@ def desactivar_vehiculo(
 
     vehiculo = _obtener_propio(sesion, vehiculo_id, usuario_actual)
     vehiculo.activo = False
-    registrar_auditoria(
-        sesion,
-        usuario_actual.id,
-        "Vehiculo",
-        "DESACTIVAR",
-        vehiculo.id,
-        f"{vehiculo.marca} {vehiculo.modelo}",
-    )
     sesion.commit()
     sesion.refresh(vehiculo)
     return vehiculo

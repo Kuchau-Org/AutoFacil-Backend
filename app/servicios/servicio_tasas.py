@@ -1,32 +1,14 @@
-"""Servicio de conversion de tasas de interes.
-
-Centraliza la conversion entre tasa nominal anual (TNA), tasa efectiva anual
-(TEA) y tasa efectiva mensual (TEM). Todas las operaciones se realizan con
-`Decimal` de alta precision y sin redondeo intermedio.
-
-Convenciones del modelo financiero:
-* El cronograma siempre opera con una tasa efectiva mensual (TEM).
-* Para tasas efectivas anuales se usa la equivalencia compuesta de 12 periodos.
-* Para tasas nominales anuales se convierte primero a TEA segun la
-  capitalizacion declarada y luego de TEA a TEM.
-"""
+"""Conversion entre tasas de interes (TNA, TEA, TEM)."""
 
 from decimal import Decimal
 
 from app.modelos.enumeraciones import Capitalizacion, TipoTasa
 from app.utilidades.decimales import MESES_ANIO, UNO, a_decimal, potencia
 
-# Numero de capitalizaciones por anio para cada frecuencia admitida. Se utiliza
-# el anio comercial de 360 dias para la capitalizacion diaria, coherente con el
-# resto del modelo financiero.
+# Capitalizaciones por anio (anio comercial de 360 dias para la diaria).
 CAPITALIZACIONES_POR_ANIO: dict[Capitalizacion, Decimal] = {
     Capitalizacion.DIARIA: Decimal("360"),
     Capitalizacion.MENSUAL: Decimal("12"),
-    Capitalizacion.BIMESTRAL: Decimal("6"),
-    Capitalizacion.TRIMESTRAL: Decimal("4"),
-    Capitalizacion.CUATRIMESTRAL: Decimal("3"),
-    Capitalizacion.SEMESTRAL: Decimal("2"),
-    Capitalizacion.ANUAL: Decimal("1"),
 }
 
 
@@ -99,10 +81,3 @@ def anual_a_mensual_compuesta(tasa_anual: Decimal) -> Decimal:
     tasa_anual = a_decimal(tasa_anual)
     exponente = UNO / MESES_ANIO
     return potencia(UNO + tasa_anual, exponente) - UNO
-
-
-def mensual_a_anual_compuesta(tasa_mensual: Decimal) -> Decimal:
-    """Convierte una tasa efectiva mensual a su equivalente efectiva anual."""
-
-    tasa_mensual = a_decimal(tasa_mensual)
-    return potencia(UNO + tasa_mensual, MESES_ANIO) - UNO

@@ -1,15 +1,4 @@
-"""Servicio de calculo de VAN y TIR sobre flujos de caja en `Decimal`.
-
-El VAN descuenta un vector de flujos a una tasa periodica dada. La TIR es la
-tasa periodica que anula el VAN; se calcula con un metodo robusto que combina
-una busqueda incremental para acotar el cambio de signo, biseccion para
-garantizar convergencia y un refinamiento final tipo Newton-Raphson.
-
-Convencion de signos del proyecto (punto de vista del deudor):
-* El flujo del periodo 0 es positivo: el deudor recibe el financiamiento neto.
-* Los flujos siguientes son negativos: el deudor paga las cuotas (interes,
-  amortizacion y seguros).
-"""
+"""Calculo de VAN y TIR sobre flujos de caja en Decimal (biseccion + Newton-Raphson)."""
 
 from decimal import Decimal
 
@@ -24,10 +13,7 @@ _PASO_BUSQUEDA = Decimal("0.005")
 
 
 def calcular_van(flujos: list[Decimal], tasa_periodica: Decimal) -> Decimal:
-    """Calcula el valor actual neto de los flujos a la tasa periodica indicada.
-
-    VAN = sumatoria de flujo_k / (1 + tasa)^k, con k iniciando en 0.
-    """
+    """Valor actual neto de los flujos a la tasa periodica indicada."""
 
     tasa_periodica = a_decimal(tasa_periodica)
     base = UNO + tasa_periodica
@@ -55,11 +41,7 @@ def _derivada_van(flujos: list[Decimal], tasa_periodica: Decimal) -> Decimal:
 def _acotar_cambio_signo(
     flujos: list[Decimal],
 ) -> tuple[Decimal, Decimal] | None:
-    """Busca un intervalo [a, b] donde el VAN cambie de signo.
-
-    Recorre el rango admisible de tasas con un paso fino para detectar el
-    primer cambio de signo, condicion necesaria para aplicar biseccion.
-    """
+    """Busca un intervalo donde el VAN cambie de signo."""
 
     tasa_anterior = _TASA_MINIMA
     van_anterior = calcular_van(flujos, tasa_anterior)
@@ -98,12 +80,7 @@ def _biseccion(flujos: list[Decimal], izquierda: Decimal, derecha: Decimal) -> D
 
 
 def calcular_tir(flujos: list[Decimal]) -> Decimal | None:
-    """Calcula la tasa interna de retorno periodica de los flujos.
-
-    Combina acotamiento por cambio de signo, biseccion y un refinamiento de
-    Newton-Raphson. Devuelve `None` cuando los flujos no permiten determinar
-    una TIR (por ejemplo, si no existe cambio de signo).
-    """
+    """Tasa interna de retorno periodica de los flujos (o None si no existe)."""
 
     if not flujos or all(a_decimal(flujo) == 0 for flujo in flujos):
         return None

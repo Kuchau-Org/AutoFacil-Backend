@@ -1,9 +1,9 @@
-"""Pruebas del cronograma de pagos bajo el metodo frances vencido ordinario."""
+"""Pruebas del cronograma de pagos (cuota regular + cuoton diferido)."""
 
 from datetime import date
 from decimal import Decimal
 
-from app.modelos.enumeraciones import TipoGracia, TipoPeriodo
+from app.modelos.enumeraciones import TipoPeriodo
 from app.servicios.calculadora_financiera import (
     ParametrosCronograma,
     calcular_cuota_francesa,
@@ -14,23 +14,25 @@ TOLERANCIA = Decimal("1e-6")
 
 
 def _parametros(
-    tipo_gracia: TipoGracia = TipoGracia.NINGUNA,
-    meses_gracia: int = 0,
-    seguro_vehicular_mensual: Decimal = Decimal("0"),
-    cuota_final: Decimal = Decimal("0"),
+    meses_gracia_total: int = 0,
+    meses_gracia_parcial: int = 0,
+    seguro_desgravamen_mensual: Decimal = Decimal("0"),
+    cuota_final: Decimal = Decimal("4000"),
 ) -> ParametrosCronograma:
     """Construye parametros de cronograma para los escenarios de prueba."""
 
     return ParametrosCronograma(
-        monto_financiado=Decimal("10000"),
-        tem=Decimal("0.01"),
-        plazo_meses=12,
-        tipo_gracia=tipo_gracia,
-        meses_gracia=meses_gracia,
-        seguro_desgravamen_anual=Decimal("0"),
-        seguro_vehicular_mensual=seguro_vehicular_mensual,
-        gps_mantenimiento_mensual=Decimal("0"),
+        monto_prestamo=Decimal("10000"),
         cuota_final=cuota_final,
+        tem=Decimal("0.01"),
+        numero_cuotas=12,
+        meses_gracia_total=meses_gracia_total,
+        meses_gracia_parcial=meses_gracia_parcial,
+        seguro_desgravamen_mensual=seguro_desgravamen_mensual,
+        seguro_riesgo_periodico=Decimal("0"),
+        gps_periodico=Decimal("0"),
+        portes_periodico=Decimal("0"),
+        gastos_adm_periodico=Decimal("0"),
         fecha_inicio=date(2026, 1, 1),
     )
 
@@ -58,79 +60,57 @@ def test_cuota_francesa_tasa_cero():
     assert cuota == Decimal("1000")
 
 
-def test_cronograma_sin_gracia_llega_a_cero():
-    """Un cronograma sin gracia debe terminar con saldo final cero."""
+def test_cronograma_tiene_un_periodo_extra_para_el_cuoton():
+    """El cronograma tiene N+1 filas: las N cuotas y el cuoton en el periodo N+1."""
 
     resultado = generar_cronograma(_parametros())
-    assert len(resultado.filas) == 12
-    assert resultado.filas[-1].saldo_final == Decimal("0")
-    assert resultado.filas[-1].tipo_periodo == TipoPeriodo.CUOTA_ORDINARIA
-    # La suma de amortizaciones debe igualar el monto financiado.
-    suma_amortizacion = sum(fila.amortizacion for fila in resultado.filas)
-    assert abs(suma_amortizacion - Decimal("10000")) < TOLERANCIA
+    assert len(resultado.filas) == 13  # 12 cuotas + cuoton
+    assert resultado.filas[-1].numero_periodo == 13
+    assert resultado.filas[-1].tipo_periodo == TipoPeriodo.CUOTA_FINAL
+    # El saldo regular cierra en cero en la ultima cuota (N) y el cuoton en N+1.
+    assert abs(resultado.filas[11].saldo_final) < TOLERANCIA
+    assert abs(resultado.filas[-1].saldo_final_cuoton) < TOLERANCIA
+
+
+def test_cuoton_se_paga_integro_en_el_periodo_final():
+    """En el periodo N+1 se cancela el cuoton (sin desgravamen, = cuota final)."""
+
+    resultado = generar_cronograma(_parametros(cuota_final=Decimal("4000")))
+    ultima = resultado.filas[-1]
+    assert abs(ultima.amortizacion_cuoton - Decimal("4000")) < TOLERANCIA
+    # Las cuotas regulares no amortizan el cuoton (solo el saldo financiado).
+    assert all(f.amortizacion_cuoton == Decimal("0") for f in resultado.filas[:-1])
+
+
+def test_saldo_financiado_excluye_el_valor_presente_del_cuoton():
+    """El tramo regular amortiza solo el saldo (prestamo menos VP del cuoton)."""
+
+    resultado = generar_cronograma(_parametros(cuota_final=Decimal("4000")))
+    # VP del cuoton = 4000 / 1.01^13 ; saldo = 10000 - VP.
+    vp = Decimal("4000") / (Decimal("1.01") ** 13)
+    assert abs(resultado.saldo_financiado - (Decimal("10000") - vp)) < TOLERANCIA
+    assert abs(resultado.filas[0].saldo_inicial - resultado.saldo_financiado) < TOLERANCIA
 
 
 def test_cronograma_gracia_total_capitaliza_intereses():
     """En la gracia total no hay pago y los intereses se capitalizan al saldo."""
 
-    resultado = generar_cronograma(
-        _parametros(tipo_gracia=TipoGracia.TOTAL, meses_gracia=3)
-    )
-    filas_gracia = resultado.filas[:3]
-    for fila in filas_gracia:
+    resultado = generar_cronograma(_parametros(meses_gracia_total=3))
+    for fila in resultado.filas[:3]:
         assert fila.tipo_periodo == TipoPeriodo.GRACIA_TOTAL
-        assert fila.cuota_ordinaria == Decimal("0")
+        assert fila.cuota == Decimal("0")
         assert fila.amortizacion == Decimal("0")
         assert fila.saldo_final > fila.saldo_inicial
-    # El saldo tras la gracia es el monto capitalizado: 10000 * 1.01^3.
-    saldo_esperado = Decimal("10000") * (Decimal("1.01") ** 3)
-    assert abs(filas_gracia[-1].saldo_final - saldo_esperado) < TOLERANCIA
-    assert resultado.filas[-1].saldo_final == Decimal("0")
+    assert abs(resultado.filas[11].saldo_final) < TOLERANCIA
 
 
 def test_cronograma_gracia_parcial_paga_solo_interes():
     """En la gracia parcial solo se paga el interes y el saldo no varia."""
 
-    resultado = generar_cronograma(
-        _parametros(tipo_gracia=TipoGracia.PARCIAL, meses_gracia=2)
-    )
-    filas_gracia = resultado.filas[:2]
-    for fila in filas_gracia:
+    resultado = generar_cronograma(_parametros(meses_gracia_parcial=2))
+    for fila in resultado.filas[:2]:
         assert fila.tipo_periodo == TipoPeriodo.GRACIA_PARCIAL
         assert fila.amortizacion == Decimal("0")
         assert fila.saldo_final == fila.saldo_inicial
-        assert abs(fila.interes - Decimal("100")) < TOLERANCIA
-        assert abs(fila.cuota_ordinaria - Decimal("100")) < TOLERANCIA
-    assert resultado.filas[-1].saldo_final == Decimal("0")
-
-
-def test_cronograma_gracia_total_cobra_seguros():
-    """En la gracia total no se amortiza capital, pero los seguros si se cobran."""
-
-    resultado = generar_cronograma(
-        _parametros(
-            tipo_gracia=TipoGracia.TOTAL,
-            meses_gracia=2,
-            seguro_vehicular_mensual=Decimal("50"),
-        )
-    )
-    primera = resultado.filas[0]
-    assert primera.tipo_periodo == TipoPeriodo.GRACIA_TOTAL
-    assert primera.cuota_ordinaria == Decimal("0")
-    assert primera.seguro_vehicular == Decimal("50")
-    # Aunque no se amortiza ni se paga interes, la cuota total incluye el seguro.
-    assert primera.cuota_total == Decimal("50")
-
-
-def test_cronograma_cuota_balon_deja_saldo_igual_al_balon_antes_del_pago():
-    """Con cuota balon, la ultima fila amortiza el saldo y queda en cero."""
-
-    resultado = generar_cronograma(_parametros(cuota_final=Decimal("4000")))
-    assert resultado.cuota_final == Decimal("4000")
-    ultima = resultado.filas[-1]
-    assert ultima.tipo_periodo == TipoPeriodo.CUOTA_FINAL
-    assert abs(ultima.cuota_final_extraordinaria - Decimal("4000")) < TOLERANCIA
-    assert ultima.saldo_final == Decimal("0")
-    # La suma de amortizaciones (incluida la balon) iguala el monto financiado.
-    suma_amortizacion = sum(fila.amortizacion for fila in resultado.filas)
-    assert abs(suma_amortizacion - Decimal("10000")) < TOLERANCIA
+        assert abs(fila.cuota - fila.interes) < TOLERANCIA
+    assert abs(resultado.filas[11].saldo_final) < TOLERANCIA

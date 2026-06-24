@@ -16,18 +16,13 @@ def obtener_usuario_actual(
     token: str = Depends(esquema_oauth2),
     sesion: Session = Depends(obtener_sesion),
 ) -> Usuario:
-    """Resuelve el usuario autenticado a partir del token JWT del encabezado.
-
-    Solo acepta tokens de acceso (tipo="acceso"). Lanza HTTP 401 si el token es
-    invalido, no es de acceso, el usuario no existe o esta inactivo.
-    """
+    """Resuelve el usuario autenticado a partir del token JWT (HTTP 401 si no es valido)."""
 
     contenido = decodificar_token_acceso(token)
     if contenido is None:
         raise error_autenticacion("El token de acceso es invalido o ha expirado.")
 
-    # El `sub` del token es el id del usuario (no su nombre), de modo que el
-    # usuario pueda cambiar su nombre de usuario sin invalidar su sesion.
+    # El `sub` del token es el id del usuario.
     sub = contenido.get("sub")
     try:
         usuario_id = int(sub)

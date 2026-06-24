@@ -1,10 +1,4 @@
-"""Generacion de datos semilla para ejecucion local.
-
-Crea dos asesores de prueba (demo y maria) y, para cada uno, su propia cartera
-de clientes y su propio catalogo de vehiculos. Los datos estan aislados por
-asesor: cada cuenta ve solo lo suyo. La operacion es idempotente: solo inserta
-los datos cuando aun no existen.
-"""
+"""Datos semilla para ejecucion local (idempotente)."""
 
 from datetime import date
 from decimal import Decimal
@@ -14,7 +8,7 @@ from sqlalchemy.orm import Session
 from app.database import FabricaSesion, crear_tablas
 from app.esquemas.simulacion import SimulacionGuardarRequest
 from app.modelos.cliente import Cliente
-from app.modelos.enumeraciones import EstadoSimulacion, Moneda, TipoTasa
+from app.modelos.enumeraciones import Capitalizacion, EstadoSimulacion, Moneda, Plan, TipoTasa
 from app.modelos.simulacion import Simulacion
 from app.modelos.usuario import Usuario
 from app.modelos.vehiculo import Vehiculo
@@ -158,26 +152,21 @@ def _crear_simulacion_demo(sesion: Session, usuario: Usuario) -> None:
         vehiculo_id=vehiculo.id,
         nombre="Compra Inteligente - demostracion",
         moneda=vehiculo.moneda,
-        tipo_tasa=TipoTasa.EFECTIVA,
-        valor_tasa=Decimal("0.145"),
-        plazo_meses=48,
+        plan=Plan.PLAN_36,
         porcentaje_cuota_inicial=Decimal("0.20"),
-        porcentaje_cuota_final=Decimal("0.40"),
-        seguro_desgravamen_anual=Decimal("0.006"),
-        desgravamen_consentido=True,
-        seguro_vehicular_mensual=Decimal("85"),
-        gps_instalacion=Decimal("250"),
-        gps_mantenimiento_mensual=Decimal("0"),
-        gps_reposicion=Decimal("0"),
-        gastos_notariales=Decimal("180"),
-        gastos_registrales=Decimal("120"),
-        tasacion=Decimal("150"),
-        cok_anual=Decimal("0.12"),
-        tasa_descuento_van=Decimal("0.10"),
-        tasa_moratoria_anual=Decimal("0.18"),
-        aseguradora="Seguros Ejemplo",
-        numero_poliza="POL-000123",
-        coberturas="Todo riesgo, robo y responsabilidad civil.",
+        tipo_tasa=TipoTasa.NOMINAL,
+        valor_tasa=Decimal("0.15"),
+        capitalizacion=Capitalizacion.DIARIA,
+        meses_gracia_total=3,
+        meses_gracia_parcial=3,
+        costo_notarial=Decimal("100"),
+        costo_registral=Decimal("75"),
+        gps_periodico=Decimal("20"),
+        portes_periodico=Decimal("3.5"),
+        gastos_adm_periodico=Decimal("3.5"),
+        seguro_desgravamen_mensual=Decimal("0.00049"),
+        seguro_riesgo_anual=Decimal("0.003"),
+        cok_anual=Decimal("0.50"),
         fecha_inicio=date(2026, 1, 1),
     )
     resultado = calcular_desde_solicitud(solicitud, vehiculo)

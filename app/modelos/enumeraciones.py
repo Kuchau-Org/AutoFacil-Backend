@@ -1,44 +1,49 @@
-"""Enumeraciones de dominio compartidas por modelos, esquemas y servicios.
-
-Centralizar los valores admitidos evita inconsistencias entre la capa de
-persistencia, la validacion de entrada y la logica financiera.
-"""
+"""Enumeraciones de dominio."""
 
 from enum import Enum
 
 
 class Moneda(str, Enum):
-    """Monedas admitidas para precios, configuraciones y simulaciones."""
+    """Monedas admitidas para precios y simulaciones."""
 
     SOLES = "PEN"
     DOLARES = "USD"
 
 
 class TipoTasa(str, Enum):
-    """Tipo de tasa de interes ingresada por el analista."""
+    """Tipo de tasa de interes ingresada (TNA = nominal, TEA = efectiva)."""
 
-    EFECTIVA = "EFECTIVA"
     NOMINAL = "NOMINAL"
+    EFECTIVA = "EFECTIVA"
 
 
 class Capitalizacion(str, Enum):
-    """Frecuencias de capitalizacion admitidas para tasas nominales."""
+    """Frecuencias de capitalizacion admitidas para una tasa nominal (TNA).
+
+    El modelo del Excel solo contempla capitalizacion diaria o mensual.
+    """
 
     DIARIA = "DIARIA"
     MENSUAL = "MENSUAL"
-    BIMESTRAL = "BIMESTRAL"
-    TRIMESTRAL = "TRIMESTRAL"
-    CUATRIMESTRAL = "CUATRIMESTRAL"
-    SEMESTRAL = "SEMESTRAL"
-    ANUAL = "ANUAL"
 
 
-class TipoGracia(str, Enum):
-    """Tipos de periodo de gracia configurables al inicio del credito."""
+class Plan(str, Enum):
+    """Plan de pagos: define el numero de cuotas y el porcentaje de cuota final."""
 
-    NINGUNA = "NINGUNA"
-    TOTAL = "TOTAL"
-    PARCIAL = "PARCIAL"
+    PLAN_24 = "PLAN_24"
+    PLAN_36 = "PLAN_36"
+
+    @property
+    def numero_cuotas(self) -> int:
+        return 24 if self is Plan.PLAN_24 else 36
+
+    @property
+    def numero_anios(self) -> int:
+        return 2 if self is Plan.PLAN_24 else 3
+
+    @property
+    def porcentaje_cuota_final(self) -> str:
+        return "0.50" if self is Plan.PLAN_24 else "0.40"
 
 
 class TipoPeriodo(str, Enum):
@@ -51,10 +56,7 @@ class TipoPeriodo(str, Enum):
 
 
 class EstadoSimulacion(str, Enum):
-    """Estados de una simulacion. AutoFacil es un simulador de propuestas, no un
-    sistema de aprobacion: por eso solo distingue una propuesta vigente
-    (CALCULADA) de una archivada (ARCHIVADA, baja logica que conserva el
-    historial)."""
+    """Estado de una simulacion: vigente (CALCULADA) o archivada (ARCHIVADA)."""
 
     CALCULADA = "CALCULADA"
     ARCHIVADA = "ARCHIVADA"

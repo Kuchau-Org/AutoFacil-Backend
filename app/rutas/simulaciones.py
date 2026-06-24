@@ -1,9 +1,4 @@
-"""Rutas de calculo y gestion de simulaciones de credito vehicular.
-
-Cada asesor gestiona sus propias simulaciones: se filtran por `usuario_id` y una
-simulacion solo es accesible (ver, editar, recalcular, eliminar) por el asesor
-que la creo. El cliente y el vehiculo usados tambien deben ser del asesor.
-"""
+"""Rutas de calculo y gestion de simulaciones (cada asesor ve solo las suyas)."""
 
 from uuid import uuid4
 
@@ -27,7 +22,6 @@ from app.modelos.simulacion import Simulacion
 from app.modelos.usuario import Usuario
 from app.modelos.vehiculo import Vehiculo
 from app.seguridad.dependencias import obtener_usuario_actual
-from app.servicios.servicio_auditoria import registrar_auditoria
 from app.servicios.servicio_gestion_simulacion import (
     aplicar_resultado_a_modelo,
     calcular_desde_solicitud,
@@ -43,12 +37,7 @@ enrutador = APIRouter(prefix="/simulaciones", tags=["Simulaciones"])
 def _validar_para_crear(
     sesion: Session, solicitud: SimulacionCalcularRequest, usuario: Usuario
 ) -> Vehiculo:
-    """Valida una NUEVA simulacion: cliente y vehiculo del asesor y activos.
-
-    Cualquier vehiculo activo del asesor se puede simular. La moneda del credito
-    puede diferir de la del vehiculo (se convierte con el tipo de cambio).
-    Devuelve el vehiculo.
-    """
+    """Valida una nueva simulacion: cliente y vehiculo del asesor y activos."""
 
     cliente = sesion.get(Cliente, solicitud.cliente_id)
     if cliente is None or cliente.usuario_id != usuario.id or not cliente.activo:
@@ -62,16 +51,8 @@ def _validar_para_crear(
 def _vehiculo_de_simulacion(
     sesion: Session, solicitud: SimulacionCalcularRequest, usuario: Usuario
 ) -> Vehiculo:
-    """Obtiene el vehiculo para previsualizar, editar o recalcular una simulacion.
+    """Obtiene el vehiculo para previsualizar, editar o recalcular (no exige que siga activo)."""
 
-    Solo comprueba que el cliente y el vehiculo pertenezcan al asesor. A
-    diferencia de crear una propuesta nueva, aqui NO se exige que el vehiculo
-    siga activo: asi se puede previsualizar, editar y recalcular una propuesta
-    ya registrada aunque su vehiculo se haya dado de baja despues.
-    """
-
-    # Se busca el cliente por su id y se valida que sea del asesor actual (no se
-    # puede operar sobre datos de otro usuario).
     cliente = sesion.get(Cliente, solicitud.cliente_id)
     if cliente is None or cliente.usuario_id != usuario.id:
         raise error_validacion("El cliente de la simulacion ya no existe.")
@@ -127,6 +108,7 @@ def _a_listado(simulacion: Simulacion) -> SimulacionListado:
         nombre=simulacion.nombre,
         estado=simulacion.estado,
         moneda=simulacion.moneda,
+        plan=simulacion.plan,
         cliente_id=simulacion.cliente_id,
         vehiculo_id=simulacion.vehiculo_id,
         cliente_nombre=(
@@ -139,8 +121,8 @@ def _a_listado(simulacion: Simulacion) -> SimulacionListado:
             if simulacion.vehiculo
             else None
         ),
-        monto_financiado=float(simulacion.monto_financiado),
-        plazo_meses=simulacion.plazo_meses,
+        monto_prestamo=float(simulacion.monto_prestamo),
+        numero_cuotas=simulacion.numero_cuotas,
         cuota_mensual=float(simulacion.cuota_mensual),
         tcea=float(simulacion.tcea) if simulacion.tcea is not None else None,
         fecha_creacion=simulacion.fecha_creacion,
@@ -156,29 +138,29 @@ def _solicitud_desde_modelo(simulacion: Simulacion) -> SimulacionCalcularRequest
         nombre=simulacion.nombre,
         moneda=simulacion.moneda,
         tipo_cambio_referencial=simulacion.tipo_cambio_referencial,
+        plan=simulacion.plan,
+        porcentaje_cuota_inicial=simulacion.porcentaje_cuota_inicial,
         tipo_tasa=simulacion.tipo_tasa,
         valor_tasa=simulacion.tasa_ingresada,
         capitalizacion=simulacion.capitalizacion,
-        plazo_meses=simulacion.plazo_meses,
-        porcentaje_cuota_inicial=simulacion.porcentaje_cuota_inicial,
-        porcentaje_cuota_final=simulacion.porcentaje_cuota_final,
-        tipo_gracia=simulacion.tipo_gracia,
-        meses_gracia=simulacion.meses_gracia,
-        seguro_desgravamen_anual=simulacion.seguro_desgravamen_anual,
-        desgravamen_consentido=simulacion.desgravamen_consentido,
-        seguro_vehicular_mensual=simulacion.seguro_vehicular_mensual,
-        gps_instalacion=simulacion.gps_instalacion,
-        gps_mantenimiento_mensual=simulacion.gps_mantenimiento_mensual,
-        gps_reposicion=simulacion.gps_reposicion,
-        gastos_notariales=simulacion.gastos_notariales,
-        gastos_registrales=simulacion.gastos_registrales,
-        tasacion=simulacion.tasacion,
+        meses_gracia_total=simulacion.meses_gracia_total,
+        meses_gracia_parcial=simulacion.meses_gracia_parcial,
+        costo_notarial=simulacion.costo_notarial,
+        costo_notarial_financiado=simulacion.costo_notarial_financiado,
+        costo_registral=simulacion.costo_registral,
+        costo_registral_financiado=simulacion.costo_registral_financiado,
+        costo_tasacion=simulacion.costo_tasacion,
+        costo_tasacion_financiado=simulacion.costo_tasacion_financiado,
+        comision_estudio=simulacion.comision_estudio,
+        comision_estudio_financiado=simulacion.comision_estudio_financiado,
+        comision_activacion=simulacion.comision_activacion,
+        comision_activacion_financiado=simulacion.comision_activacion_financiado,
+        gps_periodico=simulacion.gps_periodico,
+        portes_periodico=simulacion.portes_periodico,
+        gastos_adm_periodico=simulacion.gastos_adm_periodico,
+        seguro_desgravamen_mensual=simulacion.seguro_desgravamen_mensual,
+        seguro_riesgo_anual=simulacion.seguro_riesgo_anual,
         cok_anual=simulacion.cok_anual,
-        tasa_descuento_van=simulacion.tasa_descuento_van,
-        tasa_moratoria_anual=simulacion.tasa_moratoria_anual,
-        aseguradora=simulacion.aseguradora,
-        numero_poliza=simulacion.numero_poliza,
-        coberturas=simulacion.coberturas,
         fecha_inicio=simulacion.fecha_inicio,
     )
 
@@ -237,12 +219,7 @@ def calcular_simulacion_preview(
     sesion: Session = Depends(obtener_sesion),
     usuario_actual: Usuario = Depends(obtener_usuario_actual),
 ) -> dict:
-    """Calcula una simulacion sin persistirla, util para previsualizar resultados.
-
-    La previsualizacion solo exige que el cliente y el vehiculo sean del asesor
-    (no que el vehiculo siga activo), para poder previsualizar la edicion de una
-    propuesta historica cuyo vehiculo se dio de baja.
-    """
+    """Calcula una simulacion sin persistirla (previsualizacion)."""
 
     vehiculo = _vehiculo_de_simulacion(sesion, solicitud, usuario_actual)
     try:
@@ -271,8 +248,7 @@ def crear_simulacion(
     except ValueError as exc:
         raise error_validacion(str(exc)) from exc
 
-    # Codigo temporal unico para no chocar con la restriccion unique antes de
-    # conocer el id definitivo; se reemplaza por SIM-###### tras el flush.
+    # Codigo temporal hasta conocer el id; se reemplaza por SIM-###### tras el flush.
     simulacion = Simulacion(
         codigo=f"TMP-{uuid4().hex}",
         cliente_id=solicitud.cliente_id,
@@ -285,9 +261,6 @@ def crear_simulacion(
     sesion.flush()
     simulacion.codigo = f"SIM-{simulacion.id:06d}"
     simulacion.cronograma = construir_filas_cronograma(resultado)
-    registrar_auditoria(
-        sesion, usuario_actual.id, "Simulacion", "CREAR", simulacion.id, simulacion.codigo
-    )
     sesion.commit()
     sesion.refresh(simulacion)
     return _a_detalle(simulacion)
@@ -319,19 +292,11 @@ def actualizar_simulacion(
     sesion: Session = Depends(obtener_sesion),
     usuario_actual: Usuario = Depends(obtener_usuario_actual),
 ) -> SimulacionDetalle:
-    """Edita los parametros de una simulacion propia y recalcula su cronograma.
-
-    Se permite editar aunque el vehiculo ya se haya dado de baja (este inactivo).
-    Por defecto se conserva el precio original de la propuesta; solo se actualiza
-    al precio actual del vehiculo si la solicitud lo pide (`actualizar_precio`).
-    """
+    """Edita los parametros de una simulacion propia y recalcula su cronograma."""
 
     simulacion = _obtener_simulacion(sesion, simulacion_id, usuario_actual)
     vehiculo = _vehiculo_de_simulacion(sesion, solicitud, usuario_actual)
-    # Si se pide actualizar el precio, se reconvierte desde el precio actual del
-    # vehiculo. Si no, se conserva el precio original; pero ese precio esta en la
-    # moneda original de la propuesta, asi que si la moneda del credito cambia hay
-    # que convertirlo a la nueva moneda para no corromper el importe.
+    # Conserva el precio original (convertido si cambia la moneda) salvo que se pida actualizarlo.
     if solicitud.actualizar_precio:
         precio_operacion = None
     else:
@@ -348,12 +313,9 @@ def actualizar_simulacion(
 
     simulacion.cliente_id = solicitud.cliente_id
     simulacion.vehiculo_id = solicitud.vehiculo_id
-    # Editar y recalcular NO cambia el estado de la simulacion.
+    # Editar no cambia el estado.
     aplicar_resultado_a_modelo(simulacion, solicitud, resultado)
     simulacion.cronograma = construir_filas_cronograma(resultado)
-    registrar_auditoria(
-        sesion, usuario_actual.id, "Simulacion", "ACTUALIZAR", simulacion.id, simulacion.codigo
-    )
     sesion.commit()
     sesion.refresh(simulacion)
     return _a_detalle(simulacion)
@@ -372,14 +334,10 @@ def recalcular_simulacion(
     """Recalcula una simulacion propia usando sus parametros almacenados."""
 
     simulacion = _obtener_simulacion(sesion, simulacion_id, usuario_actual)
-    # Se reconstruye la solicitud de calculo a partir de lo guardado en la base.
     solicitud = _solicitud_desde_modelo(simulacion)
-    # Recalcular funciona sobre propuestas historicas aunque el vehiculo ya se
-    # haya dado de baja; solo exige que cliente y vehiculo sean del asesor.
     vehiculo = _vehiculo_de_simulacion(sesion, solicitud, usuario_actual)
     try:
-        # Se conserva el precio original de la operacion para mantener la
-        # trazabilidad: recalcular no cambia el precio con el que se pacto.
+        # Conserva el precio original de la operacion.
         resultado = calcular_desde_solicitud(
             solicitud, vehiculo, precio_operacion=simulacion.precio_vehiculo
         )
@@ -388,9 +346,6 @@ def recalcular_simulacion(
 
     aplicar_resultado_a_modelo(simulacion, solicitud, resultado)
     simulacion.cronograma = construir_filas_cronograma(resultado)
-    registrar_auditoria(
-        sesion, usuario_actual.id, "Simulacion", "RECALCULAR", simulacion.id, simulacion.codigo
-    )
     sesion.commit()
     sesion.refresh(simulacion)
     return _a_detalle(simulacion)
@@ -406,16 +361,10 @@ def archivar_simulacion(
     sesion: Session = Depends(obtener_sesion),
     usuario_actual: Usuario = Depends(obtener_usuario_actual),
 ) -> SimulacionDetalle:
-    """Archiva una simulacion propia (baja logica): conserva el registro y su
-    historial, pero la marca como ARCHIVADA y deja de ser compartible. No hay
-    borrado definitivo, para conservar las operaciones registradas.
-    """
+    """Archiva una simulacion propia (baja logica): la marca como ARCHIVADA."""
 
     simulacion = _obtener_simulacion(sesion, simulacion_id, usuario_actual)
     simulacion.estado = EstadoSimulacion.ARCHIVADA
-    registrar_auditoria(
-        sesion, usuario_actual.id, "Simulacion", "ARCHIVAR", simulacion.id, simulacion.codigo
-    )
     sesion.commit()
     sesion.refresh(simulacion)
     return _a_detalle(simulacion)

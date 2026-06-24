@@ -1,9 +1,4 @@
-"""Servicio de apoyo para construir, calcular y persistir simulaciones.
-
-Convierte las solicitudes del API en la entrada del nucleo de calculo, ejecuta
-la simulacion y mapea el resultado a los modelos ORM aplicando el redondeo de
-presentacion en el momento de persistir (que es un resultado final).
-"""
+"""Construye, calcula y persiste simulaciones (mapeo entre request y modelo)."""
 
 from datetime import date
 from decimal import Decimal
@@ -14,6 +9,7 @@ from app.modelos.enumeraciones import Moneda
 from app.modelos.simulacion import Simulacion
 from app.modelos.vehiculo import Vehiculo
 from app.servicios.servicio_simulacion import (
+    CostoInicial,
     EntradaSimulacion,
     ResultadoSimulacion,
     calcular_simulacion,
@@ -22,26 +18,8 @@ from app.servicios.servicio_simulacion import (
 from app.utilidades.decimales import a_decimal, redondear_moneda, redondear_tasa
 
 
-def _texto_limpio(valor: str | None) -> str | None:
-    """Normaliza un texto opcional: recorta espacios y vacios a None."""
-
-    if valor is None:
-        return None
-    limpio = valor.strip()
-    return limpio or None
-
-
-def convertir_precio(
-    precio,
-    moneda_origen: Moneda,
-    moneda_destino: Moneda,
-    tipo_cambio,
-) -> Decimal:
-    """Convierte el precio del vehiculo a la moneda del credito.
-
-    El tipo de cambio es la cotizacion del Dolar en Soles (1 USD = `tipo_cambio`
-    PEN). Si las monedas coinciden, el precio no cambia.
-    """
+def convertir_precio(precio, moneda_origen: Moneda, moneda_destino: Moneda, tipo_cambio) -> Decimal:
+    """Convierte el precio del vehiculo a la moneda del credito (1 USD = tipo_cambio PEN)."""
 
     precio = a_decimal(precio)
     if moneda_origen == moneda_destino:
@@ -63,13 +41,7 @@ def construir_entrada(
     vehiculo: Vehiculo,
     precio_operacion: object = None,
 ) -> EntradaSimulacion:
-    """Construye la entrada del calculo a partir de la solicitud y el vehiculo.
-
-    El precio se convierte a la moneda del credito (que puede diferir de la del
-    vehiculo). Si se indica `precio_operacion`, este ya esta en la moneda del
-    credito y se usa tal cual (al editar o recalcular se conserva el precio
-    original de la propuesta para la trazabilidad).
-    """
+    """Construye la entrada del calculo a partir de la solicitud y el vehiculo."""
 
     if precio_operacion is not None:
         precio = a_decimal(precio_operacion)
@@ -83,26 +55,34 @@ def construir_entrada(
     return EntradaSimulacion(
         moneda=solicitud.moneda,
         precio_vehiculo=precio,
+        plan=solicitud.plan,
         porcentaje_cuota_inicial=solicitud.porcentaje_cuota_inicial,
-        plazo_meses=solicitud.plazo_meses,
         tipo_tasa=solicitud.tipo_tasa,
         valor_tasa=solicitud.valor_tasa,
         capitalizacion=solicitud.capitalizacion,
-        tipo_gracia=solicitud.tipo_gracia,
-        meses_gracia=solicitud.meses_gracia,
-        porcentaje_cuota_final=solicitud.porcentaje_cuota_final,
-        seguro_desgravamen_anual=solicitud.seguro_desgravamen_anual,
-        desgravamen_consentido=solicitud.desgravamen_consentido,
-        seguro_vehicular_mensual=solicitud.seguro_vehicular_mensual,
-        gps_instalacion=solicitud.gps_instalacion,
-        gps_mantenimiento_mensual=solicitud.gps_mantenimiento_mensual,
-        gps_reposicion=solicitud.gps_reposicion,
-        gastos_notariales=solicitud.gastos_notariales,
-        gastos_registrales=solicitud.gastos_registrales,
-        tasacion=solicitud.tasacion,
+        meses_gracia_total=solicitud.meses_gracia_total,
+        meses_gracia_parcial=solicitud.meses_gracia_parcial,
+        costo_notarial=CostoInicial(
+            a_decimal(solicitud.costo_notarial), solicitud.costo_notarial_financiado
+        ),
+        costo_registral=CostoInicial(
+            a_decimal(solicitud.costo_registral), solicitud.costo_registral_financiado
+        ),
+        costo_tasacion=CostoInicial(
+            a_decimal(solicitud.costo_tasacion), solicitud.costo_tasacion_financiado
+        ),
+        comision_estudio=CostoInicial(
+            a_decimal(solicitud.comision_estudio), solicitud.comision_estudio_financiado
+        ),
+        comision_activacion=CostoInicial(
+            a_decimal(solicitud.comision_activacion), solicitud.comision_activacion_financiado
+        ),
+        gps_periodico=solicitud.gps_periodico,
+        portes_periodico=solicitud.portes_periodico,
+        gastos_adm_periodico=solicitud.gastos_adm_periodico,
+        seguro_desgravamen_mensual=solicitud.seguro_desgravamen_mensual,
+        seguro_riesgo_anual=solicitud.seguro_riesgo_anual,
         cok_anual=solicitud.cok_anual,
-        tasa_descuento_van=solicitud.tasa_descuento_van,
-        tasa_moratoria_anual=solicitud.tasa_moratoria_anual,
         tipo_cambio_referencial=solicitud.tipo_cambio_referencial,
         fecha_inicio=solicitud.fecha_inicio or date.today(),
     )
@@ -126,48 +106,56 @@ def aplicar_resultado_a_modelo(
 ) -> None:
     """Vuelca los parametros y resultados (redondeados) sobre el modelo ORM."""
 
-    simulacion.nombre = solicitud.nombre
+    simulacion.nombre = (solicitud.nombre or "").strip() or None
     simulacion.moneda = resultado.moneda
     simulacion.tipo_cambio_referencial = (
         redondear_tasa(solicitud.tipo_cambio_referencial, 6)
         if solicitud.tipo_cambio_referencial is not None
         else None
     )
+    simulacion.fecha_inicio = solicitud.fecha_inicio or date.today()
+
+    # --- Parametros de entrada ---
     simulacion.precio_vehiculo = redondear_moneda(resultado.precio_vehiculo)
-    simulacion.cuota_inicial = redondear_moneda(resultado.cuota_inicial)
+    simulacion.plan = resultado.plan
     simulacion.porcentaje_cuota_inicial = redondear_tasa(resultado.porcentaje_cuota_inicial)
-    simulacion.monto_financiado = redondear_moneda(resultado.monto_financiado)
-    simulacion.plazo_meses = resultado.plazo_meses
     simulacion.tipo_tasa = resultado.tipo_tasa
     simulacion.tasa_ingresada = redondear_tasa(resultado.tasa_ingresada)
     simulacion.capitalizacion = resultado.capitalizacion
+    simulacion.meses_gracia_total = resultado.meses_gracia_total
+    simulacion.meses_gracia_parcial = resultado.meses_gracia_parcial
+    simulacion.costo_notarial = redondear_moneda(solicitud.costo_notarial)
+    simulacion.costo_notarial_financiado = solicitud.costo_notarial_financiado
+    simulacion.costo_registral = redondear_moneda(solicitud.costo_registral)
+    simulacion.costo_registral_financiado = solicitud.costo_registral_financiado
+    simulacion.costo_tasacion = redondear_moneda(solicitud.costo_tasacion)
+    simulacion.costo_tasacion_financiado = solicitud.costo_tasacion_financiado
+    simulacion.comision_estudio = redondear_moneda(solicitud.comision_estudio)
+    simulacion.comision_estudio_financiado = solicitud.comision_estudio_financiado
+    simulacion.comision_activacion = redondear_moneda(solicitud.comision_activacion)
+    simulacion.comision_activacion_financiado = solicitud.comision_activacion_financiado
+    simulacion.gps_periodico = redondear_moneda(solicitud.gps_periodico)
+    simulacion.portes_periodico = redondear_moneda(solicitud.portes_periodico)
+    simulacion.gastos_adm_periodico = redondear_moneda(solicitud.gastos_adm_periodico)
+    simulacion.seguro_desgravamen_mensual = redondear_tasa(solicitud.seguro_desgravamen_mensual)
+    simulacion.seguro_riesgo_anual = redondear_tasa(solicitud.seguro_riesgo_anual)
+    simulacion.cok_anual = redondear_tasa(resultado.cok_anual)
+
+    # --- Resultados derivados ---
+    simulacion.numero_cuotas = resultado.numero_cuotas
+    simulacion.numero_anios = resultado.numero_anios
+    simulacion.porcentaje_cuota_final = redondear_tasa(resultado.porcentaje_cuota_final)
+    simulacion.cuota_inicial = redondear_moneda(resultado.cuota_inicial)
+    simulacion.cuota_final = redondear_moneda(resultado.cuota_final)
+    simulacion.monto_prestamo = redondear_moneda(resultado.monto_prestamo)
+    simulacion.saldo_financiado = redondear_moneda(resultado.saldo_financiado)
     simulacion.tea_equivalente = redondear_tasa(resultado.tea_equivalente)
     simulacion.tem = redondear_tasa(resultado.tem)
-    simulacion.tipo_gracia = resultado.tipo_gracia
-    simulacion.meses_gracia = resultado.meses_gracia
-    simulacion.fecha_inicio = solicitud.fecha_inicio or date.today()
-
-    simulacion.porcentaje_cuota_final = redondear_tasa(solicitud.porcentaje_cuota_final)
-    simulacion.cuota_final = redondear_moneda(resultado.cuota_final)
-    simulacion.seguro_desgravamen_anual = redondear_tasa(solicitud.seguro_desgravamen_anual)
-    simulacion.desgravamen_consentido = solicitud.desgravamen_consentido
-    simulacion.seguro_vehicular_mensual = redondear_moneda(solicitud.seguro_vehicular_mensual)
-    simulacion.gps_instalacion = redondear_moneda(solicitud.gps_instalacion)
-    simulacion.gps_mantenimiento_mensual = redondear_moneda(solicitud.gps_mantenimiento_mensual)
-    simulacion.gps_reposicion = redondear_moneda(solicitud.gps_reposicion)
-    simulacion.gastos_notariales = redondear_moneda(solicitud.gastos_notariales)
-    simulacion.gastos_registrales = redondear_moneda(solicitud.gastos_registrales)
-    simulacion.tasacion = redondear_moneda(solicitud.tasacion)
-    simulacion.gastos_iniciales = redondear_moneda(resultado.total_gastos_iniciales)
-    simulacion.cok_anual = redondear_tasa(resultado.cok_anual)
-    simulacion.tasa_descuento_van = redondear_tasa(resultado.tasa_descuento_van)
-    simulacion.tasa_moratoria_anual = redondear_tasa(solicitud.tasa_moratoria_anual)
-    simulacion.aseguradora = _texto_limpio(solicitud.aseguradora)
-    simulacion.numero_poliza = _texto_limpio(solicitud.numero_poliza)
-    simulacion.coberturas = _texto_limpio(solicitud.coberturas)
-
+    simulacion.seguro_riesgo_periodico = redondear_moneda(resultado.seguro_riesgo_periodico)
+    simulacion.total_costos_financiados = redondear_moneda(resultado.total_costos_financiados)
+    simulacion.total_costos_efectivo = redondear_moneda(resultado.total_costos_efectivo)
     simulacion.cuota_mensual = redondear_moneda(resultado.cuota_mensual)
-    simulacion.cuota_total_promedio = redondear_moneda(resultado.cuota_total_promedio)
+    simulacion.cok_mensual = redondear_tasa(resultado.cok_mensual)
     simulacion.van = redondear_moneda(resultado.van)
     simulacion.tir_mensual = (
         redondear_tasa(resultado.tir_mensual) if resultado.tir_mensual is not None else None
@@ -176,37 +164,40 @@ def aplicar_resultado_a_modelo(
         redondear_tasa(resultado.tir_anual) if resultado.tir_anual is not None else None
     )
     simulacion.tcea = redondear_tasa(resultado.tcea) if resultado.tcea is not None else None
-    simulacion.costo_total_credito = redondear_moneda(resultado.costo_total_credito)
     simulacion.total_intereses = redondear_moneda(resultado.total_intereses)
     simulacion.total_amortizado = redondear_moneda(resultado.total_amortizado)
-    simulacion.total_seguros = redondear_moneda(resultado.total_seguros)
-    simulacion.total_cargos_desembolso = redondear_moneda(resultado.total_cargos_desembolso)
-    simulacion.total_gps_mantenimiento = redondear_moneda(resultado.total_gps_mantenimiento)
+    simulacion.total_seguro_desgravamen = redondear_moneda(resultado.total_seguro_desgravamen)
+    simulacion.total_seguro_riesgo = redondear_moneda(resultado.total_seguro_riesgo)
+    simulacion.total_gps = redondear_moneda(resultado.total_gps)
+    simulacion.total_portes = redondear_moneda(resultado.total_portes)
+    simulacion.total_gastos_adm = redondear_moneda(resultado.total_gastos_adm)
     simulacion.monto_total_pagado = redondear_moneda(resultado.monto_total_pagado)
 
 
-def construir_filas_cronograma(
-    resultado: ResultadoSimulacion,
-) -> list[CronogramaPago]:
-    """Crea las filas ORM del cronograma usando el redondeo reconciliado."""
+def construir_filas_cronograma(resultado: ResultadoSimulacion) -> list[CronogramaPago]:
+    """Crea las filas ORM del cronograma con el redondeo de presentacion."""
 
-    filas: list[CronogramaPago] = []
-    for fila in redondear_cronograma(resultado):
-        filas.append(
-            CronogramaPago(
-                numero_periodo=fila["numero_periodo"],
-                fecha_pago=fila["fecha_pago"],
-                tipo_periodo=fila["tipo_periodo"],
-                saldo_inicial=fila["saldo_inicial"],
-                interes=fila["interes"],
-                amortizacion=fila["amortizacion"],
-                seguro_desgravamen=fila["seguro_desgravamen"],
-                seguro_vehicular=fila["seguro_vehicular"],
-                gps_mantenimiento=fila["gps_mantenimiento"],
-                cuota_ordinaria=fila["cuota_ordinaria"],
-                cuota_final_extraordinaria=fila["cuota_final_extraordinaria"],
-                cuota_total=fila["cuota_total"],
-                saldo_final=fila["saldo_final"],
-            )
+    return [
+        CronogramaPago(
+            numero_periodo=fila["numero_periodo"],
+            fecha_pago=fila["fecha_pago"],
+            tipo_periodo=fila["tipo_periodo"],
+            saldo_inicial_cuoton=fila["saldo_inicial_cuoton"],
+            interes_cuoton=fila["interes_cuoton"],
+            amortizacion_cuoton=fila["amortizacion_cuoton"],
+            desgravamen_cuoton=fila["desgravamen_cuoton"],
+            saldo_final_cuoton=fila["saldo_final_cuoton"],
+            saldo_inicial=fila["saldo_inicial"],
+            interes=fila["interes"],
+            cuota=fila["cuota"],
+            amortizacion=fila["amortizacion"],
+            seguro_desgravamen=fila["seguro_desgravamen"],
+            seguro_riesgo=fila["seguro_riesgo"],
+            gps=fila["gps"],
+            portes=fila["portes"],
+            gastos_adm=fila["gastos_adm"],
+            saldo_final=fila["saldo_final"],
+            flujo=fila["flujo"],
         )
-    return filas
+        for fila in redondear_cronograma(resultado)
+    ]

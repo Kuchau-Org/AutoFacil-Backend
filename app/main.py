@@ -1,9 +1,4 @@
-"""Punto de entrada de la aplicacion FastAPI de AutoFacil.
-
-Configura la aplicacion, el middleware CORS para el desarrollo local, registra
-los enrutadores, organiza la documentacion Swagger y crea las tablas y los
-datos semilla al iniciar.
-"""
+"""Punto de entrada de la aplicacion FastAPI."""
 
 from contextlib import asynccontextmanager
 
@@ -15,7 +10,6 @@ from app.database import FabricaSesion, crear_tablas
 from app.rutas import (
     auth,
     clientes,
-    indicadores,
     perfil,
     simulaciones,
     tipo_cambio,
@@ -24,8 +18,7 @@ from app.rutas import (
 
 configuracion = obtener_configuracion()
 
-# Metadatos de los grupos de endpoints mostrados en Swagger. El orden define el
-# orden en que aparecen las secciones en la documentacion.
+# Grupos de endpoints en Swagger.
 ETIQUETAS_OPENAPI = [
     {
         "name": "Autenticacion",
@@ -60,15 +53,9 @@ ETIQUETAS_OPENAPI = [
         "name": "Simulaciones",
         "description": (
             "Nucleo de AutoFacil: previsualizacion (`/calcular`), guardado, listado con "
-            "filtros, detalle (con su cronograma incluido), edicion con recalculo, recalculo "
-            "y archivado (baja logica) de las propuestas de credito vehicular."
-        ),
-    },
-    {
-        "name": "Indicadores financieros",
-        "description": (
-            "Indicadores agregados del asesor para el panel principal: totales de clientes, "
-            "vehiculos y simulaciones vigentes, TCEA promedio y montos financiados por moneda."
+            "filtros, detalle (con el cronograma de la cuota regular y del cuoton), edicion "
+            "con recalculo, recalculo y archivado (baja logica) de las propuestas de credito "
+            "vehicular Compra Inteligente."
         ),
     },
     {
@@ -87,11 +74,14 @@ cartera de clientes, su catalogo de vehiculos y sus simulaciones.
 
 ### Producto
 
-Producto **Compra Inteligente**: metodo frances vencido ordinario con cuota balon
-opcional (un porcentaje del precio se difiere al pago final) y meses comerciales de
-30 dias. La tasa de interes es fija (efectiva o nominal; si es nominal la
-capitalizacion es obligatoria). Los calculos usan aritmetica decimal de alta
-precision y no redondean valores intermedios.
+Producto **Compra Inteligente** (estilo Interbank, Peru): metodo frances vencido
+ordinario con meses comerciales de 30 dias (NDxA = 360). El precio se reparte en
+cuota inicial, cuotas mensuales y un **cuoton** (cuota final) que se difiere y se
+paga integro en el periodo **N+1**. El **plan** define el numero de cuotas y el
+cuoton: Plan 24 -> 24 cuotas y 50%; Plan 36 -> 36 cuotas y 40%. La tasa es fija
+(efectiva o nominal; si es nominal la capitalizacion es diaria o mensual). Los
+calculos usan aritmetica decimal de alta precision y no redondean valores
+intermedios.
 
 ### Autenticacion
 
@@ -149,7 +139,6 @@ aplicacion.include_router(perfil.enrutador)
 aplicacion.include_router(clientes.enrutador)
 aplicacion.include_router(vehiculos.enrutador)
 aplicacion.include_router(simulaciones.enrutador)
-aplicacion.include_router(indicadores.enrutador)
 aplicacion.include_router(tipo_cambio.enrutador)
 
 
@@ -164,6 +153,5 @@ def estado_servicio() -> dict:
     }
 
 
-# Alias `app`: punto de entrada ASGI estandar esperado por uvicorn al ejecutar
-# `uvicorn app.main:app`. Apunta a la misma instancia que `aplicacion`.
+# Alias ASGI estandar para uvicorn (app.main:app).
 app = aplicacion

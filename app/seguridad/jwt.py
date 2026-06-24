@@ -11,17 +11,12 @@ configuracion = obtener_configuracion()
 
 
 def crear_token_acceso(subject: str) -> str:
-    """Genera un token JWT de acceso firmado con el id del usuario.
-
-    El campo `sub` contiene el id del usuario; `exp` define la expiracion segun
-    la configuracion de la aplicacion.
-    """
+    """Genera un token JWT de acceso firmado con el id del usuario."""
 
     ahora = datetime.now(timezone.utc)
     expiracion = ahora + timedelta(minutes=configuracion.minutos_expiracion_token)
     contenido = {
         "sub": subject,
-        # tipo="acceso": los endpoints privados rechazan tokens de otro tipo.
         "tipo": "acceso",
         "iat": ahora,
         "exp": expiracion,
@@ -32,11 +27,7 @@ def crear_token_acceso(subject: str) -> str:
 
 
 def decodificar_token_acceso(token: str) -> dict | None:
-    """Decodifica un token de ACCESO; devuelve su contenido o `None` si no es valido.
-
-    Solo acepta tokens cuyo claim `tipo` sea exactamente "acceso"; cualquier otro
-    token se rechaza para que no sirva como credencial.
-    """
+    """Decodifica un token de acceso; devuelve su contenido o None si no es valido."""
 
     try:
         contenido = jwt.decode(

@@ -16,7 +16,6 @@ from app.modelos.usuario import Usuario
 from app.seguridad.dependencias import obtener_usuario_actual
 from app.seguridad.hash import hashear_password, verificar_password
 from app.seguridad.jwt import crear_token_acceso
-from app.servicios.servicio_auditoria import registrar_auditoria
 from app.utilidades.respuestas import error_autenticacion, error_conflicto
 
 enrutador = APIRouter(prefix="/auth", tags=["Autenticacion"])
@@ -49,15 +48,6 @@ def _autenticar(sesion: Session, identificador: str, password: str) -> Usuario:
     return usuario
 
 
-def _registrar_login(sesion: Session, usuario: Usuario) -> None:
-    """Registra en auditoria un inicio de sesion exitoso (sin datos sensibles)."""
-
-    registrar_auditoria(
-        sesion, usuario.id, "Usuario", "LOGIN", usuario.id, "Inicio de sesion"
-    )
-    sesion.commit()
-
-
 @enrutador.post(
     "/login",
     response_model=TokenRespuesta,
@@ -67,13 +57,9 @@ def login(
     datos: OAuth2PasswordRequestForm = Depends(),
     sesion: Session = Depends(obtener_sesion),
 ) -> TokenRespuesta:
-    """Inicia sesion mediante formulario OAuth2 y devuelve un token JWT.
-
-    Acepta el nombre de usuario o el correo en el campo `username`.
-    """
+    """Inicia sesion por formulario OAuth2 (usuario o correo en `username`)."""
 
     usuario = _autenticar(sesion, datos.username, datos.password)
-    _registrar_login(sesion, usuario)
     token = crear_token_acceso(str(usuario.id))
     return TokenRespuesta(access_token=token)
 
@@ -87,10 +73,9 @@ def login_json(
     credenciales: CredencialesLogin,
     sesion: Session = Depends(obtener_sesion),
 ) -> TokenRespuesta:
-    """Inicia sesion mediante un cuerpo JSON y devuelve un token JWT."""
+    """Inicia sesion por cuerpo JSON."""
 
     usuario = _autenticar(sesion, credenciales.usuario, credenciales.password)
-    _registrar_login(sesion, usuario)
     token = crear_token_acceso(str(usuario.id))
     return TokenRespuesta(access_token=token)
 

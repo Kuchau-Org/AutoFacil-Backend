@@ -1,8 +1,4 @@
-"""Rutas de gestion de clientes.
-
-Cada asesor gestiona unicamente su propia cartera: los clientes se filtran por
-`usuario_id` y un cliente solo es accesible por el asesor que lo registro.
-"""
+"""Rutas de gestion de clientes (cada asesor ve solo su cartera)."""
 
 from fastapi import APIRouter, Depends, Query, status
 from sqlalchemy import or_
@@ -13,7 +9,6 @@ from app.esquemas.cliente import ClienteActualizar, ClienteCrear, ClienteRespues
 from app.modelos.cliente import Cliente
 from app.modelos.usuario import Usuario
 from app.seguridad.dependencias import obtener_usuario_actual
-from app.servicios.servicio_auditoria import registrar_auditoria
 from app.utilidades.respuestas import error_conflicto, error_no_encontrado
 
 enrutador = APIRouter(prefix="/clientes", tags=["Clientes"])
@@ -89,10 +84,6 @@ def crear_cliente(
 
     cliente = Cliente(**datos.model_dump(), usuario_id=usuario_actual.id)
     sesion.add(cliente)
-    sesion.flush()
-    registrar_auditoria(
-        sesion, usuario_actual.id, "Cliente", "CREAR", cliente.id, cliente.numero_documento
-    )
     sesion.commit()
     sesion.refresh(cliente)
     return cliente
@@ -125,9 +116,6 @@ def actualizar_cliente(
     for campo, valor in cambios.items():
         setattr(cliente, campo, valor)
 
-    registrar_auditoria(
-        sesion, usuario_actual.id, "Cliente", "ACTUALIZAR", cliente.id, cliente.numero_documento
-    )
     sesion.commit()
     sesion.refresh(cliente)
     return cliente
@@ -147,9 +135,6 @@ def desactivar_cliente(
 
     cliente = _obtener_propio(sesion, cliente_id, usuario_actual)
     cliente.activo = False
-    registrar_auditoria(
-        sesion, usuario_actual.id, "Cliente", "DESACTIVAR", cliente.id, cliente.numero_documento
-    )
     sesion.commit()
     sesion.refresh(cliente)
     return cliente

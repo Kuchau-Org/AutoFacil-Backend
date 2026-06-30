@@ -7,7 +7,6 @@ from sqlalchemy.orm import Session
 
 from app.database import FabricaSesion, crear_tablas
 from app.esquemas.simulacion import SimulacionGuardarRequest
-from app.modelos.cliente import Cliente
 from app.modelos.enumeraciones import Capitalizacion, EstadoSimulacion, Moneda, Plan, TipoTasa
 from app.modelos.simulacion import Simulacion
 from app.modelos.usuario import Usuario
@@ -20,7 +19,7 @@ from app.servicios.servicio_gestion_simulacion import (
 )
 
 
-# Catalogo de vehiculos de ejemplo (cada asesor recibe su propia copia).
+# Vehiculos de ejemplo (cada usuario recibe su propia copia).
 _VEHICULOS = [
     {
         "marca": "Toyota", "modelo": "Corolla Cross", "version": "XLI", "anio": 2026,
@@ -66,39 +65,9 @@ _VEHICULOS = [
     },
 ]
 
-# Clientes de ejemplo por asesor (cada asesor ve solo los suyos).
-_CLIENTES_DEMO = [
-    {
-        "tipo_documento": "DNI", "numero_documento": "76543821",
-        "nombres": "Carlos Alberto", "apellidos": "Mendez Rivas",
-        "correo": "carlos.mendez@correo.local", "telefono": "987321654",
-        "direccion": "Av. Javier Prado 123, Lima", "fecha_nacimiento": date(1990, 5, 14),
-        "ingreso_mensual": Decimal("8500.00"), "gastos_mensuales": Decimal("3000.00"),
-        "otras_deudas": Decimal("800.00"), "moneda_ingresos": Moneda.SOLES,
-    },
-    {
-        "tipo_documento": "DNI", "numero_documento": "72914583",
-        "nombres": "Andrea", "apellidos": "Salazar Paredes",
-        "correo": "andrea.salazar@correo.local", "telefono": "912345876",
-        "direccion": "Calle Los Pinos 456, Arequipa", "fecha_nacimiento": date(1988, 11, 2),
-        "ingreso_mensual": Decimal("9800.00"), "gastos_mensuales": Decimal("3500.00"),
-        "otras_deudas": Decimal("1200.00"), "moneda_ingresos": Moneda.DOLARES,
-    },
-]
-_CLIENTES_MARIA = [
-    {
-        "tipo_documento": "DNI", "numero_documento": "44556677",
-        "nombres": "Lucia", "apellidos": "Garcia Torres",
-        "correo": "lucia.garcia@correo.local", "telefono": "999888777",
-        "direccion": "Jr. Union 789, Trujillo", "fecha_nacimiento": date(1993, 3, 28),
-        "ingreso_mensual": Decimal("6200.00"), "gastos_mensuales": Decimal("2100.00"),
-        "otras_deudas": Decimal("0.00"), "moneda_ingresos": Moneda.SOLES,
-    },
-]
-
 
 def _crear_usuarios(sesion: Session) -> tuple[Usuario, Usuario]:
-    """Crea los asesores de prueba y devuelve (demo, maria)."""
+    """Crea los usuarios de prueba y devuelve (demo, maria)."""
 
     demo = Usuario(
         nombre="Usuario",
@@ -121,34 +90,24 @@ def _crear_usuarios(sesion: Session) -> tuple[Usuario, Usuario]:
     return demo, maria
 
 
-def _crear_clientes(sesion: Session, usuario_id: int, datos: list[dict]) -> None:
-    """Inserta los clientes indicados como propiedad del asesor."""
-
-    sesion.add_all([Cliente(usuario_id=usuario_id, **fila) for fila in datos])
-
-
 def _crear_vehiculos(sesion: Session, usuario_id: int) -> None:
-    """Crea el catalogo de vehiculos de ejemplo del asesor indicado."""
+    """Crea los vehiculos de ejemplo del usuario indicado."""
 
-    sesion.add_all(
-        [Vehiculo(usuario_id=usuario_id, **fila) for fila in _VEHICULOS]
-    )
+    sesion.add_all([Vehiculo(usuario_id=usuario_id, **fila) for fila in _VEHICULOS])
 
 
 def _crear_simulacion_demo(sesion: Session, usuario: Usuario) -> None:
-    """Crea una simulacion de Compra Inteligente (con cuota balon) para el asesor."""
+    """Crea una simulacion de Compra Inteligente de ejemplo para el usuario."""
 
-    cliente = sesion.query(Cliente).filter(Cliente.usuario_id == usuario.id).first()
     vehiculo = (
         sesion.query(Vehiculo)
         .filter(Vehiculo.usuario_id == usuario.id, Vehiculo.moneda == Moneda.SOLES)
         .first()
     )
-    if cliente is None or vehiculo is None:
+    if vehiculo is None:
         return
 
     solicitud = SimulacionGuardarRequest(
-        cliente_id=cliente.id,
         vehiculo_id=vehiculo.id,
         nombre="Compra Inteligente - demostracion",
         moneda=vehiculo.moneda,
@@ -172,7 +131,6 @@ def _crear_simulacion_demo(sesion: Session, usuario: Usuario) -> None:
     resultado = calcular_desde_solicitud(solicitud, vehiculo)
     simulacion = Simulacion(
         codigo="PENDIENTE",
-        cliente_id=cliente.id,
         vehiculo_id=vehiculo.id,
         usuario_id=usuario.id,
         estado=EstadoSimulacion.CALCULADA,
@@ -185,10 +143,7 @@ def _crear_simulacion_demo(sesion: Session, usuario: Usuario) -> None:
 
 
 def sembrar_datos(sesion: Session) -> bool:
-    """Inserta los datos semilla que falten (idempotente).
-
-    Devuelve True si se inserto algo y False si nada cambio.
-    """
+    """Inserta los datos semilla que falten. Devuelve True si inserto algo."""
 
     creado = False
 
@@ -198,10 +153,6 @@ def sembrar_datos(sesion: Session) -> bool:
         demo, maria = _crear_usuarios(sesion)
         creado = True
 
-    if demo is not None and maria is not None and sesion.query(Cliente).first() is None:
-        _crear_clientes(sesion, demo.id, _CLIENTES_DEMO)
-        _crear_clientes(sesion, maria.id, _CLIENTES_MARIA)
-        creado = True
     if demo is not None and maria is not None and sesion.query(Vehiculo).first() is None:
         _crear_vehiculos(sesion, demo.id)
         _crear_vehiculos(sesion, maria.id)

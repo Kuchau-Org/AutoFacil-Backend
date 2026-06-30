@@ -49,7 +49,7 @@ class ParametrosFinancieros(BaseModel):
     # Seguros: desgravamen como % mensual; riesgo (todo riesgo) como % anual del precio.
     seguro_desgravamen_mensual: Decimal = Field(default=Decimal("0"), ge=0)
     seguro_riesgo_anual: Decimal = Field(default=Decimal("0"), ge=0)
-    # Costo de oportunidad del capital del cliente (TEA) para el VAN.
+    # Costo de oportunidad del dinero del usuario (TEA) para el VAN.
     cok_anual: Decimal = Field(default=Decimal("0"), ge=0)
     fecha_inicio: date | None = None
 
@@ -67,7 +67,6 @@ class ParametrosFinancieros(BaseModel):
 class SimulacionCalcularRequest(ParametrosFinancieros):
     """Solicitud para calcular una simulacion (con o sin persistencia)."""
 
-    cliente_id: int
     vehiculo_id: int
     nombre: str | None = Field(default=None, max_length=150)
 
@@ -75,7 +74,6 @@ class SimulacionCalcularRequest(ParametrosFinancieros):
         "json_schema_extra": {
             "examples": [
                 {
-                    "cliente_id": 1,
                     "vehiculo_id": 1,
                     "nombre": "Compra Inteligente - Plan 36",
                     "moneda": "PEN",
@@ -172,7 +170,6 @@ class SimulacionRespuesta(BaseModel):
     id: int
     codigo: str
     nombre: str | None
-    cliente_id: int
     vehiculo_id: int
     usuario_id: int
     estado: EstadoSimulacion
@@ -238,7 +235,6 @@ class SimulacionRespuesta(BaseModel):
 class SimulacionDetalle(SimulacionRespuesta):
     """Simulacion con datos descriptivos y cronograma asociado."""
 
-    cliente_nombre: str | None = None
     vehiculo_descripcion: str | None = None
     usuario_nombre: str | None = None
     cronograma: list[CronogramaFilaRespuesta] = []
@@ -255,9 +251,7 @@ class SimulacionListado(BaseModel):
     estado: EstadoSimulacion
     moneda: Moneda
     plan: Plan
-    cliente_id: int
     vehiculo_id: int
-    cliente_nombre: str | None = None
     vehiculo_descripcion: str | None = None
     monto_prestamo: float
     numero_cuotas: int

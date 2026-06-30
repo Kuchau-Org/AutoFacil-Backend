@@ -1,6 +1,5 @@
 # Registra todos los modelos ORM antes de crear el esquema.
 
-from app.modelos.cliente import Cliente
 from app.modelos.cronograma import CronogramaPago
 from app.modelos.enumeraciones import (
     Capitalizacion,
@@ -15,7 +14,6 @@ from app.modelos.usuario import Usuario
 from app.modelos.vehiculo import Vehiculo
 
 __all__ = [
-    "Cliente",
     "CronogramaPago",
     "Simulacion",
     "Usuario",

@@ -25,12 +25,7 @@ _PATRON_CORREO = re.compile(r"^[^@\s]+@[^@\s]+\.[^@\s]+$")
 
 
 def validar_correo(valor: str | None) -> str | None:
-    """Valida un correo OPCIONAL de forma basica permitiendo dominios locales.
-
-    Normaliza (recorta espacios y pasa a minusculas). Devuelve `None` cuando el
-    valor esta vacio (campo opcional, p. ej. el correo de un cliente). Lanza
-    `ValueError` con un mensaje en espanol cuando el formato no corresponde.
-    """
+    """Valida un correo opcional (permite dominios locales); vacio -> None."""
 
     if valor is None:
         return None

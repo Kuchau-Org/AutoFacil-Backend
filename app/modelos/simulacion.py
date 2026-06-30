@@ -33,9 +33,8 @@ class Simulacion(Base, MarcasTiempoMixin):
     # Etiqueta opcional para reconocer la simulacion.
     nombre: Mapped[str | None] = mapped_column(String(150), nullable=True)
 
-    cliente_id: Mapped[int] = mapped_column(ForeignKey("clientes.id"), nullable=False)
     vehiculo_id: Mapped[int] = mapped_column(ForeignKey("vehiculos.id"), nullable=False)
-    # Asesor propietario de la simulacion (aislamiento de datos por usuario).
+    # Usuario duenio de la simulacion (cada quien ve solo las suyas).
     usuario_id: Mapped[int] = mapped_column(ForeignKey("usuarios.id"), nullable=False, index=True)
 
     estado: Mapped[EstadoSimulacion] = mapped_column(
@@ -122,7 +121,6 @@ class Simulacion(Base, MarcasTiempoMixin):
     monto_total_pagado: Mapped[float] = mapped_column(TipoMonto, nullable=False, default=0)
 
     # Relaciones de navegacion.
-    cliente = relationship("Cliente")
     vehiculo = relationship("Vehiculo")
     usuario = relationship("Usuario")
     cronograma = relationship(

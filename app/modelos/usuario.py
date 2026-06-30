@@ -1,4 +1,4 @@
-"""Modelo ORM del usuario del sistema (asesor)."""
+"""Modelo ORM del usuario del sistema."""
 
 from sqlalchemy import Boolean, String
 from sqlalchemy.orm import Mapped, mapped_column
@@ -8,7 +8,7 @@ from app.modelos.base import MarcasTiempoMixin
 
 
 class Usuario(Base, MarcasTiempoMixin):
-    """Asesor que opera el sistema. No existen roles ni jerarquia de permisos."""
+    """Persona que usa el sistema. No hay roles ni jerarquia de permisos."""
 
     __tablename__ = "usuarios"
 

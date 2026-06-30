@@ -17,7 +17,6 @@ def _solicitud() -> SimulacionCalcularRequest:
     """Crea una solicitud de calculo valida basica."""
 
     return SimulacionCalcularRequest(
-        cliente_id=1,
         vehiculo_id=1,
         moneda="PEN",
         plan="PLAN_36",
@@ -71,7 +70,6 @@ def test_simular_mismo_vehiculo_en_otra_moneda():
         marca="Toyota", modelo="Yaris", anio=2026, precio=Decimal("75000"), moneda=Moneda.SOLES
     )
     solicitud = SimulacionCalcularRequest(
-        cliente_id=1,
         vehiculo_id=1,
         moneda="USD",
         tipo_cambio_referencial=Decimal("3.75"),

@@ -9,7 +9,6 @@ from app.config import obtener_configuracion
 from app.database import FabricaSesion, crear_tablas
 from app.rutas import (
     auth,
-    clientes,
     perfil,
     simulaciones,
     tipo_cambio,
@@ -23,7 +22,7 @@ ETIQUETAS_OPENAPI = [
     {
         "name": "Autenticacion",
         "description": (
-            "Registro e inicio de sesion del asesor. El login (`/auth/login-json`) y el "
+            "Registro e inicio de sesion del usuario. El login (`/auth/login-json`) y el "
             "registro (`/auth/registro`) devuelven un token JWT de acceso que debe enviarse "
             "como `Authorization: Bearer <token>` en el resto de endpoints."
         ),
@@ -36,17 +35,10 @@ ETIQUETAS_OPENAPI = [
         ),
     },
     {
-        "name": "Clientes",
-        "description": (
-            "Gestion de la cartera de clientes del asesor: alta, busqueda, edicion y baja "
-            "logica. Cada asesor solo ve y opera sus propios clientes."
-        ),
-    },
-    {
         "name": "Vehiculos",
         "description": (
-            "Catalogo de vehiculos del asesor: alta, busqueda, edicion y baja logica. El "
-            "vehiculo solo maneja el indicador `activo` (no tiene estado comercial)."
+            "Vehiculos que el usuario registra para simular su financiamiento: alta, "
+            "busqueda, edicion y baja logica."
         ),
     },
     {
@@ -68,9 +60,9 @@ ETIQUETAS_OPENAPI = [
 ]
 
 DESCRIPCION_API = """
-API del sistema **AutoFacil**: simulacion y gestion de credito vehicular para una
-entidad financiera en Peru. Cada asesor trabaja de forma aislada sobre su propia
-cartera de clientes, su catalogo de vehiculos y sus simulaciones.
+API del sistema **AutoFacil**: cualquier persona crea una cuenta y simula el
+credito de su auto. Cada usuario trabaja de forma aislada sobre sus propios
+vehiculos y sus simulaciones.
 
 ### Producto
 
@@ -97,8 +89,8 @@ intermedios.
   20% de cuota inicial.
 * Los importes monetarios se devuelven como numeros (`float`); el frontend aplica
   el formato de moneda.
-* La baja de clientes, vehiculos y simulaciones es **logica** (no hay borrado
-  fisico): `DELETE` desactiva/archiva conservando el historial.
+* La baja de vehiculos y simulaciones es **logica** (no hay borrado fisico):
+  `DELETE` desactiva/archiva conservando el historial.
 """
 
 
@@ -136,7 +128,6 @@ aplicacion.add_middleware(
 
 aplicacion.include_router(auth.enrutador)
 aplicacion.include_router(perfil.enrutador)
-aplicacion.include_router(clientes.enrutador)
 aplicacion.include_router(vehiculos.enrutador)
 aplicacion.include_router(simulaciones.enrutador)
 aplicacion.include_router(tipo_cambio.enrutador)

@@ -1,4 +1,4 @@
-"""Rutas del catalogo de vehiculos (cada asesor ve solo el suyo)."""
+"""Rutas de los vehiculos del usuario (cada quien ve solo los suyos)."""
 
 from fastapi import APIRouter, Depends, Query, status
 from sqlalchemy import or_
@@ -15,7 +15,7 @@ enrutador = APIRouter(prefix="/vehiculos", tags=["Vehiculos"])
 
 
 def _obtener_propio(sesion: Session, vehiculo_id: int, usuario: Usuario) -> Vehiculo:
-    """Obtiene un vehiculo del propio asesor o lanza 404 si no existe o no es suyo."""
+    """Obtiene un vehiculo del propio usuario o lanza 404 si no existe o no es suyo."""
 
     vehiculo = sesion.get(Vehiculo, vehiculo_id)
     if vehiculo is None or vehiculo.usuario_id != usuario.id:
@@ -30,7 +30,7 @@ def listar_vehiculos(
     sesion: Session = Depends(obtener_sesion),
     usuario_actual: Usuario = Depends(obtener_usuario_actual),
 ) -> list[Vehiculo]:
-    """Lista el catalogo del asesor con busqueda por marca, modelo o version."""
+    """Lista los vehiculos del usuario con busqueda por marca, modelo o version."""
 
     consulta = sesion.query(Vehiculo).filter(Vehiculo.usuario_id == usuario_actual.id)
     if not incluir_inactivos:
@@ -69,7 +69,7 @@ def crear_vehiculo(
     sesion: Session = Depends(obtener_sesion),
     usuario_actual: Usuario = Depends(obtener_usuario_actual),
 ) -> Vehiculo:
-    """Registra un nuevo vehiculo en el catalogo del asesor."""
+    """Registra un nuevo vehiculo del usuario."""
 
     vehiculo = Vehiculo(**datos.model_dump(), usuario_id=usuario_actual.id)
     sesion.add(vehiculo)

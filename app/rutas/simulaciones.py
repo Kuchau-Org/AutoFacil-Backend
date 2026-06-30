@@ -1,4 +1,4 @@
-"""Rutas de calculo y gestion de simulaciones (cada asesor ve solo las suyas)."""
+"""Rutas de calculo y gestion de simulaciones (cada usuario ve solo las suyas)."""
 
 from uuid import uuid4
 
@@ -16,7 +16,6 @@ from app.esquemas.simulacion import (
     SimulacionListado,
     SimulacionRespuesta,
 )
-from app.modelos.cliente import Cliente
 from app.modelos.enumeraciones import EstadoSimulacion
 from app.modelos.simulacion import Simulacion
 from app.modelos.usuario import Usuario
@@ -37,11 +36,8 @@ enrutador = APIRouter(prefix="/simulaciones", tags=["Simulaciones"])
 def _validar_para_crear(
     sesion: Session, solicitud: SimulacionCalcularRequest, usuario: Usuario
 ) -> Vehiculo:
-    """Valida una nueva simulacion: cliente y vehiculo del asesor y activos."""
+    """Valida una nueva simulacion: el vehiculo es del usuario y esta activo."""
 
-    cliente = sesion.get(Cliente, solicitud.cliente_id)
-    if cliente is None or cliente.usuario_id != usuario.id or not cliente.activo:
-        raise error_validacion("El cliente seleccionado no existe o esta inactivo.")
     vehiculo = sesion.get(Vehiculo, solicitud.vehiculo_id)
     if vehiculo is None or vehiculo.usuario_id != usuario.id or not vehiculo.activo:
         raise error_validacion("El vehiculo seleccionado no existe o esta inactivo.")
@@ -53,9 +49,6 @@ def _vehiculo_de_simulacion(
 ) -> Vehiculo:
     """Obtiene el vehiculo para previsualizar, editar o recalcular (no exige que siga activo)."""
 
-    cliente = sesion.get(Cliente, solicitud.cliente_id)
-    if cliente is None or cliente.usuario_id != usuario.id:
-        raise error_validacion("El cliente de la simulacion ya no existe.")
     vehiculo = sesion.get(Vehiculo, solicitud.vehiculo_id)
     if vehiculo is None or vehiculo.usuario_id != usuario.id:
         raise error_validacion("El vehiculo de la simulacion ya no existe.")
@@ -63,7 +56,7 @@ def _vehiculo_de_simulacion(
 
 
 def _obtener_simulacion(sesion: Session, simulacion_id: int, usuario: Usuario) -> Simulacion:
-    """Obtiene una simulacion propia o lanza 404 si no existe o no es del asesor."""
+    """Obtiene una simulacion propia o lanza 404 si no existe o no es del usuario."""
 
     simulacion = sesion.get(Simulacion, simulacion_id)
     if simulacion is None or simulacion.usuario_id != usuario.id:
@@ -77,11 +70,6 @@ def _a_detalle(simulacion: Simulacion) -> SimulacionDetalle:
     base = SimulacionRespuesta.model_validate(simulacion).model_dump()
     return SimulacionDetalle(
         **base,
-        cliente_nombre=(
-            f"{simulacion.cliente.nombres} {simulacion.cliente.apellidos}"
-            if simulacion.cliente
-            else None
-        ),
         vehiculo_descripcion=(
             f"{simulacion.vehiculo.marca} {simulacion.vehiculo.modelo}"
             if simulacion.vehiculo
@@ -109,13 +97,7 @@ def _a_listado(simulacion: Simulacion) -> SimulacionListado:
         estado=simulacion.estado,
         moneda=simulacion.moneda,
         plan=simulacion.plan,
-        cliente_id=simulacion.cliente_id,
         vehiculo_id=simulacion.vehiculo_id,
-        cliente_nombre=(
-            f"{simulacion.cliente.nombres} {simulacion.cliente.apellidos}"
-            if simulacion.cliente
-            else None
-        ),
         vehiculo_descripcion=(
             f"{simulacion.vehiculo.marca} {simulacion.vehiculo.modelo}"
             if simulacion.vehiculo
@@ -133,7 +115,6 @@ def _solicitud_desde_modelo(simulacion: Simulacion) -> SimulacionCalcularRequest
     """Reconstruye la solicitud de calculo a partir de una simulacion guardada."""
 
     return SimulacionCalcularRequest(
-        cliente_id=simulacion.cliente_id,
         vehiculo_id=simulacion.vehiculo_id,
         nombre=simulacion.nombre,
         moneda=simulacion.moneda,
@@ -168,26 +149,21 @@ def _solicitud_desde_modelo(simulacion: Simulacion) -> SimulacionCalcularRequest
 @enrutador.get("", response_model=list[SimulacionListado], summary="Listar simulaciones")
 def listar_simulaciones(
     busqueda: str | None = Query(default=None),
-    cliente_id: int | None = Query(default=None),
     vehiculo_id: int | None = Query(default=None),
     estado: EstadoSimulacion | None = Query(default=None),
     sesion: Session = Depends(obtener_sesion),
     usuario_actual: Usuario = Depends(obtener_usuario_actual),
 ) -> list[SimulacionListado]:
-    """Lista las simulaciones del asesor con busqueda y filtros opcionales.
+    """Lista las simulaciones del usuario, con busqueda y filtros opcionales.
 
-    Permite filtrar por cliente, vehiculo y estado, ademas de la busqueda libre
-    por nombre, codigo, datos del cliente o del vehiculo.
+    La busqueda libre encuentra por nombre, codigo o datos del vehiculo.
     """
 
     consulta = (
         sesion.query(Simulacion)
         .filter(Simulacion.usuario_id == usuario_actual.id)
-        .outerjoin(Cliente, Simulacion.cliente_id == Cliente.id)
         .outerjoin(Vehiculo, Simulacion.vehiculo_id == Vehiculo.id)
     )
-    if cliente_id is not None:
-        consulta = consulta.filter(Simulacion.cliente_id == cliente_id)
     if vehiculo_id is not None:
         consulta = consulta.filter(Simulacion.vehiculo_id == vehiculo_id)
     if estado is not None:
@@ -198,8 +174,6 @@ def listar_simulaciones(
             or_(
                 Simulacion.nombre.ilike(patron),
                 Simulacion.codigo.ilike(patron),
-                Cliente.nombres.ilike(patron),
-                Cliente.apellidos.ilike(patron),
                 Vehiculo.marca.ilike(patron),
                 Vehiculo.modelo.ilike(patron),
             )
@@ -251,7 +225,6 @@ def crear_simulacion(
     # Codigo temporal hasta conocer el id; se reemplaza por SIM-###### tras el flush.
     simulacion = Simulacion(
         codigo=f"TMP-{uuid4().hex}",
-        cliente_id=solicitud.cliente_id,
         vehiculo_id=solicitud.vehiculo_id,
         usuario_id=usuario_actual.id,
         estado=solicitud.estado,
@@ -311,7 +284,6 @@ def actualizar_simulacion(
     except ValueError as exc:
         raise error_validacion(str(exc)) from exc
 
-    simulacion.cliente_id = solicitud.cliente_id
     simulacion.vehiculo_id = solicitud.vehiculo_id
     # Editar no cambia el estado.
     aplicar_resultado_a_modelo(simulacion, solicitud, resultado)

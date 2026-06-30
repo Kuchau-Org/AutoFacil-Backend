@@ -1,4 +1,4 @@
-"""Modelo ORM de la oferta vehicular que la entidad financia."""
+"""Modelo ORM del vehiculo que el usuario evalua financiar."""
 
 from sqlalchemy import Boolean, Enum as SqlEnum, ForeignKey, Integer, String, Text
 from sqlalchemy.orm import Mapped, mapped_column
@@ -9,12 +9,12 @@ from app.modelos.enumeraciones import Moneda
 
 
 class Vehiculo(Base, MarcasTiempoMixin):
-    """Vehiculo del catalogo del asesor, evaluado para financiar."""
+    """Vehiculo que el usuario registra para simular su financiamiento."""
 
     __tablename__ = "vehiculos"
 
     id: Mapped[int] = mapped_column(primary_key=True, autoincrement=True)
-    # Asesor propietario del vehiculo: cada asesor administra su propio catalogo.
+    # Usuario duenio del vehiculo.
     usuario_id: Mapped[int] = mapped_column(
         ForeignKey("usuarios.id"), nullable=False, index=True
     )

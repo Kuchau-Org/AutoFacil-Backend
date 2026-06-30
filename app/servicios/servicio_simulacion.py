@@ -59,7 +59,7 @@ class EntradaSimulacion:
     # Seguros: desgravamen como % mensual y riesgo (todo riesgo) como % anual del precio.
     seguro_desgravamen_mensual: Decimal = CERO
     seguro_riesgo_anual: Decimal = CERO
-    # Costo de oportunidad del capital del cliente (TEA) para el VAN.
+    # Costo de oportunidad del dinero del usuario (TEA) para el VAN.
     cok_anual: Decimal = CERO
     tipo_cambio_referencial: Decimal | None = None
     fecha_inicio: date = field(default_factory=date.today)
@@ -161,20 +161,26 @@ def _validar_entrada(entrada: EntradaSimulacion) -> None:
 
 
 def calcular_simulacion(entrada: EntradaSimulacion) -> ResultadoSimulacion:
-    """Calcula los montos derivados, el cronograma y los indicadores financieros."""
+    """Calcula todo: montos del producto, el cronograma y los indicadores.
+
+    Pasos: 1) sacar los montos a partir del precio y el plan; 2) pasar la tasa a
+    mensual; 3) armar el cronograma mes a mes; 4) con lo que paga la persona,
+    calcular VAN, TIR y TCEA (que mide el costo real anual del credito).
+    """
 
     _validar_entrada(entrada)
 
+    # 1) Montos del producto a partir del precio del auto y el plan elegido.
     precio = a_decimal(entrada.precio_vehiculo)
     porcentaje_inicial = a_decimal(entrada.porcentaje_cuota_inicial)
     plan = entrada.plan
     numero_cuotas = plan.numero_cuotas
     porcentaje_final = a_decimal(plan.porcentaje_cuota_final)
 
-    cuota_inicial = precio * porcentaje_inicial
-    cuota_final = precio * porcentaje_final
+    cuota_inicial = precio * porcentaje_inicial   # lo que se adelanta al inicio
+    cuota_final = precio * porcentaje_final        # el cuoton (pago grande del final)
 
-    # Costos iniciales: los financiados se suman al prestamo; los de contado no.
+    # Los costos iniciales "financiados" se suman al prestamo; los "al contado" no.
     total_financiados = sum((c.monto for c in entrada._costos() if c.financiado), CERO)
     total_efectivo = sum((c.monto for c in entrada._costos() if not c.financiado), CERO)
     monto_prestamo = precio - cuota_inicial + total_financiados
@@ -183,12 +189,12 @@ def calcular_simulacion(entrada: EntradaSimulacion) -> ResultadoSimulacion:
             "El monto del prestamo debe ser mayor que cero; revise la cuota inicial."
         )
 
-    # Conversion de la tasa ingresada a TEA y TEM equivalentes.
+    # 2) La tasa que ingresa el usuario (anual) se pasa a su equivalente mensual.
     tea, tem = servicio_tasas.calcular_tasas_equivalentes(
         entrada.tipo_tasa, entrada.valor_tasa, entrada.capitalizacion
     )
 
-    # Seguro de riesgo anual prorrateado por cuota (NCxA = 12).
+    # El seguro de riesgo se da como % anual del precio; se reparte entre 12 cuotas.
     desgravamen_mensual = a_decimal(entrada.seguro_desgravamen_mensual)
     seguro_riesgo_periodico = a_decimal(entrada.seguro_riesgo_anual) * precio / MESES_ANIO
 
@@ -206,9 +212,11 @@ def calcular_simulacion(entrada: EntradaSimulacion) -> ResultadoSimulacion:
         gastos_adm_periodico=a_decimal(entrada.gastos_adm_periodico),
         fecha_inicio=entrada.fecha_inicio,
     )
+    # 3) El cronograma mes a mes con las cuotas y el cuoton.
     cronograma = generar_cronograma(parametros)
 
-    # Flujo del deudor (Excel): +prestamo en el periodo 0 y los egresos despues.
+    # 4) El flujo de caja visto por la persona: en el momento 0 recibe el prestamo
+    # (positivo) y despues paga cada mes (negativo). Con eso se sacan VAN/TIR/TCEA.
     flujos = [monto_prestamo]
     flujos.extend(fila.flujo for fila in cronograma.filas)
 
@@ -220,6 +228,7 @@ def calcular_simulacion(entrada: EntradaSimulacion) -> ResultadoSimulacion:
     tir_anual = (
         potencia(UNO + tir_mensual, MESES_ANIO) - UNO if tir_mensual is not None else None
     )
+    # TCEA = costo real anual del credito (la TIR mensual llevada a un ano).
     _, tcea = calcular_tcea(flujos)
 
     return ResultadoSimulacion(
